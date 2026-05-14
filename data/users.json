@@ -1,0 +1,49 @@
+[ {
+  "id" : 3,
+  "username" : "report",
+  "password" : "95851e211e49848653b32a0fb52bd63c53f672a1b25b8f7c00d451532589db03",
+  "email" : "report@gmail.com",
+  "createDate" : [ 2026, 5, 7, 16, 6, 1, 307203900 ],
+  "updateDate" : [ 2026, 5, 7, 16, 6, 1, 307203900 ],
+  "lastLoginDate" : [ 2026, 5, 7, 16, 6, 1, 307203900 ],
+  "counterLogin" : 0,
+  "status" : "ACTIVE",
+  "role" : "REPORT",
+  "mustChangePassword" : false
+}, {
+  "id" : 4,
+  "username" : "hii",
+  "password" : "6837457863024f954cdcb318ce4b1eec0eb8ba079c27e7bdaab2722519ea8319",
+  "email" : "phanthanhhieu18062004@gmail.com",
+  "createDate" : [ 2026, 5, 7, 16, 6, 16, 155510000 ],
+  "updateDate" : [ 2026, 5, 7, 16, 7, 3, 533263400 ],
+  "lastLoginDate" : [ 2026, 5, 7, 16, 6, 43, 748555800 ],
+  "counterLogin" : 0,
+  "status" : "ACTIVE",
+  "role" : "USER",
+  "mustChangePassword" : false
+}, {
+  "id" : 1,
+  "username" : "admin",
+  "password" : "ac0e7d037817094e9e0b4441f9bae3209d67b02fa484917065f71b16109a1a78",
+  "email" : "admin@gmail.com",
+  "createDate" : [ 2026, 5, 7, 16, 6, 1, 307203900 ],
+  "updateDate" : [ 2026, 5, 14, 11, 15, 22, 753336100 ],
+  "lastLoginDate" : [ 2026, 5, 14, 11, 15, 22, 751742200 ],
+  "counterLogin" : 0,
+  "status" : "ACTIVE",
+  "role" : "ADMIN",
+  "mustChangePassword" : false
+}, {
+  "id" : 2,
+  "username" : "user",
+  "password" : "90aae915da86d3b3a4da7a996bc264bfbaf50a953cbbe8cd3478a2a6ccc7b900",
+  "email" : "user@gmail.com",
+  "createDate" : [ 2026, 5, 7, 16, 6, 1, 307203900 ],
+  "updateDate" : [ 2026, 5, 14, 11, 30, 41, 148097200 ],
+  "lastLoginDate" : [ 2026, 5, 14, 11, 30, 41, 147093200 ],
+  "counterLogin" : 0,
+  "status" : "ACTIVE",
+  "role" : "USER",
+  "mustChangePassword" : false
+} ]

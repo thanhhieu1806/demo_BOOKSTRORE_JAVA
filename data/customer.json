@@ -1,0 +1,21 @@
+[ {
+  "id" : 1,
+  "fullName" : "hello",
+  "phone" : "0789654123",
+  "email" : "hieu123@gmail.com",
+  "address" : "123 hello",
+  "status" : "ACTIVE",
+  "createDate" : [ 2026, 5, 7, 16, 15, 28, 961453000 ],
+  "updateDate" : [ 2026, 5, 7, 17, 14, 36, 881176800 ],
+  "decription" : "hello"
+}, {
+  "id" : 3,
+  "fullName" : "hieuphan",
+  "phone" : "09874563212",
+  "email" : "hieu77@gmail.com",
+  "address" : "123nguyenvana",
+  "status" : "INACTIVE",
+  "createDate" : [ 2026, 5, 7, 17, 41, 33, 277199000 ],
+  "updateDate" : [ 2026, 5, 7, 17, 43, 8, 467104300 ],
+  "decription" : ""
+} ]

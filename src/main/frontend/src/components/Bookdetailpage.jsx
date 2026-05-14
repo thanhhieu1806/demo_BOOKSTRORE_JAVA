@@ -1,0 +1,335 @@
+import { useEffect, useState } from 'react';
+import { useNavigate, Link } from 'react-router-dom';
+import { useAuth } from '../context/AuthContext';
+import api from '../service/api';
+
+const fmt = (p) => new Intl.NumberFormat('vi-VN').format(p) + ' đ';
+const getCart = () => { try { return JSON.parse(localStorage.getItem('cart') || '[]'); } catch { return []; } };
+const saveCart = (c) => localStorage.setItem('cart', JSON.stringify(c));
+
+export default function BookDetailPage() {
+    const { user: me, logout } = useAuth();
+    const navigate = useNavigate();
+    const isAdmin = me?.role === 'ADMIN';
+
+    // Lấy bookId từ URL query: /book-detail?id=1
+    const bookId = new URLSearchParams(window.location.search).get('id');
+
+    const [book, setBook] = useState(null);
+    const [books, setBooks] = useState([]); // sách liên quan
+    const [loading, setLoading] = useState(true);
+    const [cart, setCart] = useState(getCart());
+    const [toast, setToast] = useState('');
+    const [isSidebarOpen, setIsSidebarOpen] = useState(true);
+
+    useEffect(() => {
+        if (!bookId) return;
+        Promise.all([
+            fetch(`/dem_login-0.0.1-SNAPSHOT/api/books/${bookId}`).then(r => r.json()),
+            api.getBooks(),
+        ]).then(([bookData, allBooks]) => {
+            setBook(bookData);
+            setBooks(allBooks.filter(b => b.id !== parseInt(bookId) && b.status === 'ACTIVE').slice(0, 4));
+        }).catch(() => { })
+            .finally(() => setLoading(false));
+    }, [bookId]);
+
+    const showToastMsg = (msg) => { setToast(msg); setTimeout(() => setToast(''), 3000); };
+
+    const addToCart = (b) => {
+        const ex = cart.find(i => i.id === b.id);
+        let newCart;
+        if (ex) {
+            if (ex.quantity >= b.quantity) { showToastMsg('Đã đạt số lượng tối đa!'); return; }
+            newCart = cart.map(i => i.id === b.id ? { ...i, quantity: i.quantity + 1 } : i);
+        } else {
+            newCart = [...cart, {
+                id: b.id, title: b.title, price: b.price,
+                imageUrl: b.imageUrl, quantity: 1, maxQty: b.quantity
+            }];
+        }
+        setCart(newCart); saveCart(newCart);
+        showToastMsg(`Đã thêm "${b.title}" vào giỏ hàng!`);
+    };
+
+    const cartCount = cart.reduce((s, i) => s + i.quantity, 0);
+
+    if (loading) return (
+        <div style={{
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            height: '100vh', gap: 12, color: '#6b7280'
+        }}>
+            <div style={{
+                width: 24, height: 24, border: '3px solid #e5e7eb',
+                borderTopColor: '#4f46e5', borderRadius: '50%',
+                animation: 'spin 0.8s linear infinite'
+            }} />
+            Đang tải...
+            <style>{`@keyframes spin{to{transform:rotate(360deg)}}`}</style>
+        </div>
+    );
+
+    if (!book) return (
+        <div style={{ textAlign: 'center', padding: '80px 20px' }}>
+            <div style={{ fontSize: 52 }}>📭</div>
+            <h2>Không tìm thấy sách</h2>
+            <a href="/dem_login-0.0.1-SNAPSHOT/cart"
+                style={{ color: '#4f46e5', fontWeight: 600 }}>← Quay lại mua sách</a>
+        </div>
+    );
+
+    return (
+        <div className="dashboard" style={{ background: '#f0f2ff' }}>
+            {/* SIDEBAR */}
+            <aside className={`sidebar ${isSidebarOpen ? '' : 'closed'}`}>
+                <div className="sidebar-brand">
+                    <div className="brand-title">Demo Login</div>
+                    <button className="btn-toggle-sidebar" onClick={() => setIsSidebarOpen(false)}>
+                        <svg viewBox="0 0 24 24" width="22" height="22" stroke="currentColor" strokeWidth="2" fill="none">
+                            <line x1="3" y1="12" x2="21" y2="12" /><line x1="3" y1="6" x2="21" y2="6" /><line x1="3" y1="18" x2="21" y2="18" />
+                        </svg>
+                    </button>
+                </div>
+                <nav className="sidebar-nav">
+                    {isAdmin && <a className="nav-item" href="/dem_login-0.0.1-SNAPSHOT/users">👥 Quản lý người dùng</a>}
+                    <a className="nav-item" href="/dem_login-0.0.1-SNAPSHOT/customers">🧑‍💼 Khách hàng</a>
+                    {isAdmin && <a className="nav-item" href="/dem_login-0.0.1-SNAPSHOT/books">📚 Quản lý sách</a>}
+                    <a className="nav-item active" href="/dem_login-0.0.1-SNAPSHOT/cart">🛒 Mua sách</a>
+                    <a className="nav-item" href="/dem_login-0.0.1-SNAPSHOT/orders">📦 Đơn hàng</a>
+                </nav>
+                <div className="sidebar-footer">
+                    {me ? (
+                        <>
+                            <div className="sidebar-user">
+                                <div className="avatar">{me.username?.[0]?.toUpperCase()}</div>
+                                <div className="sidebar-user-info">
+                                    <div className="sidebar-username">{me.username}</div>
+                                    <div className="sidebar-role">{me.role}</div>
+                                </div>
+                            </div>
+                            <button className="btn-logout" onClick={logout} title="Đăng xuất">
+                                <svg viewBox="0 0 24 24" width="18" height="18" stroke="currentColor" strokeWidth="2" fill="none">
+                                    <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
+                                    <polyline points="16 17 21 12 16 7" />
+                                    <line x1="21" y1="12" x2="9" y2="12" />
+                                </svg>
+                            </button>
+                        </>
+                    ) : (
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', width: '100%' }}>
+                            <Link to="/login" style={{ textAlign: 'center', background: '#4f46e5', color: '#fff', padding: '10px', borderRadius: '8px', textDecoration: 'none', fontWeight: 600 }}>Đăng nhập</Link>
+                            <Link to="/register" style={{ textAlign: 'center', background: '#f3f4f6', color: '#374151', padding: '10px', borderRadius: '8px', textDecoration: 'none', fontWeight: 600, border: '1px solid #e5e7eb' }}>Đăng ký</Link>
+                        </div>
+                    )}
+                </div>
+            </aside>
+
+            {/* MAIN */}
+            <main className="main-content" style={{ background: '#f0f2ff', padding: '28px 32px' }}>
+                {!isSidebarOpen && (
+                    <button className="btn-toggle-sidebar" style={{ marginBottom: 16 }}
+                        onClick={() => setIsSidebarOpen(true)}>
+                        <svg viewBox="0 0 24 24" width="22" height="22" stroke="currentColor" strokeWidth="2" fill="none">
+                            <line x1="3" y1="12" x2="21" y2="12" /><line x1="3" y1="6" x2="21" y2="6" /><line x1="3" y1="18" x2="21" y2="18" />
+                        </svg>
+                    </button>
+                )}
+
+                {/* Breadcrumb */}
+                <div style={{ fontSize: 13, color: '#6b7280', marginBottom: 20 }}>
+                    <a href="/dem_login-0.0.1-SNAPSHOT/cart"
+                        style={{ color: '#4f46e5', textDecoration: 'none', fontWeight: 600 }}>
+                        ← Danh sách sách
+                    </a>
+                    <span style={{ margin: '0 8px' }}>›</span>
+                    <span>{book.title}</span>
+                </div>
+
+                {/* Book detail card */}
+                <style>{`
+                    .book-detail-card {
+                        background: #fff; border-radius: 20px; padding: 32px;
+                        box-shadow: 0 4px 20px rgba(0,0,0,0.08); margin-bottom: 32px;
+                        display: grid; grid-template-columns: 300px 1fr; gap: 32px;
+                    }
+                    .book-cover-wrap {
+                        border-radius: 16px; overflow: hidden; height: 400px;
+                        background: linear-gradient(135deg,#ede9fe,#ddd6fe);
+                        display: flex; align-items: center; justify-content: center;
+                    }
+                    .book-actions-wrap { display: flex; gap: 12px; margin-top: auto; }
+                    
+                    @media (max-width: 800px) {
+                        .book-detail-card {
+                            grid-template-columns: 1fr;
+                            padding: 24px; gap: 24px;
+                        }
+                        .book-cover-wrap { height: 320px; }
+                        .book-actions-wrap { flex-direction: column; }
+                    }
+                `}</style>
+                <div className="book-detail-card">
+
+                    {/* Cover */}
+                    <div className="book-cover-wrap">
+                        {book.imageUrl
+                            ? <img src={book.imageUrl} alt={book.title}
+                                style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                            : <span style={{ fontSize: 80 }}>📖</span>
+                        }
+                    </div>
+
+                    {/* Info */}
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+                        <div>
+                            {book.category && (
+                                <span style={{
+                                    fontSize: 12, fontWeight: 700,
+                                    background: '#ede9fe', color: '#6d28d9',
+                                    padding: '4px 12px', borderRadius: 20, marginBottom: 10,
+                                    display: 'inline-block'
+                                }}>
+                                    {book.category}
+                                </span>
+                            )}
+                            <h1 style={{
+                                fontSize: 28, fontWeight: 800, color: '#111827',
+                                margin: '10px 0 6px', lineHeight: 1.3
+                            }}>
+                                {book.title}
+                            </h1>
+                            {book.author && (
+                                <p style={{ fontSize: 15, color: '#6b7280', margin: 0 }}>
+                                    Tác giả: <strong style={{ color: '#374151' }}>{book.author}</strong>
+                                </p>
+                            )}
+                        </div>
+
+                        {/* Price */}
+                        <div style={{
+                            display: 'flex', alignItems: 'center', gap: 16,
+                            padding: '16px 20px', background: '#f8f7ff',
+                            borderRadius: 12, border: '1.5px solid #ede9fe'
+                        }}>
+                            <span style={{ fontSize: 32, fontWeight: 800, color: '#4f46e5' }}>
+                                {fmt(book.price)}
+                            </span>
+                            <span style={{
+                                fontSize: 13, color: book.quantity <= 5 ? '#ef4444' : '#6b7280',
+                                fontWeight: 600, background: book.quantity <= 5 ? '#fef2f2' : '#f3f4f6',
+                                padding: '4px 10px', borderRadius: 20
+                            }}>
+                                Còn {book.quantity} cuốn
+                            </span>
+                        </div>
+
+                        {/* Description */}
+                        {book.description && (
+                            <div>
+                                <h3 style={{ fontSize: 16, fontWeight: 700, marginBottom: 8 }}>Mô tả</h3>
+                                <p style={{
+                                    fontSize: 14, color: '#374151', lineHeight: 1.7,
+                                    background: '#fafafa', padding: 16, borderRadius: 10,
+                                    border: '1px solid #f3f4f6'
+                                }}>
+                                    {book.description}
+                                </p>
+                            </div>
+                        )}
+
+                        {/* Actions */}
+                        <div className="book-actions-wrap">
+                            <button
+                                disabled={book.quantity === 0}
+                                onClick={() => addToCart(book)}
+                                style={{
+                                    flex: 1, padding: '14px 24px', border: 'none',
+                                    borderRadius: 12, fontSize: 15, fontWeight: 700,
+                                    background: book.quantity === 0 ? '#f3f4f6'
+                                        : 'linear-gradient(135deg,#4f46e5,#7c3aed)',
+                                    color: book.quantity === 0 ? '#9ca3af' : '#fff',
+                                    cursor: book.quantity === 0 ? 'not-allowed' : 'pointer',
+                                    boxShadow: book.quantity > 0 ? '0 4px 12px rgba(79,70,229,0.3)' : 'none',
+                                    transition: 'all .2s'
+                                }}>
+                                {book.quantity === 0 ? 'Hết hàng' : '+ Thêm vào giỏ hàng'}
+                            </button>
+                            <button onClick={() => navigate('/cart', { state: { tab: 'cart' } })}
+                                style={{
+                                    padding: '14px 24px', border: '1.5px solid #e5e7eb',
+                                    borderRadius: 12, fontSize: 15, fontWeight: 600,
+                                    color: '#374151', textDecoration: 'none', cursor: 'pointer',
+                                    background: '#fff', transition: 'all .2s',
+                                    display: 'flex', alignItems: 'center'
+                                }}>
+                                🛒 Xem giỏ {cartCount > 0 && `(${cartCount})`}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                {/* Related books */}
+                {books.length > 0 && (
+                    <div>
+                        <h2 style={{ fontSize: 20, fontWeight: 700, marginBottom: 16 }}>
+                            📚 Sách liên quan
+                        </h2>
+                        <div style={{
+                            display: 'grid',
+                            gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: 16
+                        }}>
+                            {books.map(b => (
+                                <a key={b.id}
+                                    href={`/dem_login-0.0.1-SNAPSHOT/book-detail?id=${b.id}`}
+                                    style={{ textDecoration: 'none', color: 'inherit' }}>
+                                    <div style={{
+                                        background: '#fff', borderRadius: 14,
+                                        border: '1.5px solid #e5e7eb', overflow: 'hidden',
+                                        transition: 'all .2s', cursor: 'pointer'
+                                    }}
+                                        onMouseEnter={e => { e.currentTarget.style.borderColor = '#a5b4fc'; e.currentTarget.style.boxShadow = '0 4px 16px rgba(79,70,229,0.12)'; }}
+                                        onMouseLeave={e => { e.currentTarget.style.borderColor = '#e5e7eb'; e.currentTarget.style.boxShadow = 'none'; }}>
+                                        <div style={{
+                                            height: 140, overflow: 'hidden',
+                                            background: 'linear-gradient(135deg,#ede9fe,#ddd6fe)',
+                                            display: 'flex', alignItems: 'center', justifyContent: 'center'
+                                        }}>
+                                            {b.imageUrl
+                                                ? <img src={b.imageUrl} alt={b.title}
+                                                    style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                                                : <span style={{ fontSize: 40 }}>📖</span>
+                                            }
+                                        </div>
+                                        <div style={{ padding: '12px 14px' }}>
+                                            <div style={{
+                                                fontSize: 13, fontWeight: 700, marginBottom: 6,
+                                                display: '-webkit-box', WebkitLineClamp: 2,
+                                                WebkitBoxOrient: 'vertical', overflow: 'hidden'
+                                            }}>
+                                                {b.title}
+                                            </div>
+                                            <div style={{ fontSize: 15, fontWeight: 800, color: '#4f46e5' }}>
+                                                {fmt(b.price)}
+                                            </div>
+                                        </div>
+                                    </div>
+                                </a>
+                            ))}
+                        </div>
+                    </div>
+                )}
+            </main>
+
+            {toast && (
+                <div style={{
+                    position: 'fixed', bottom: 24, left: '50%',
+                    transform: 'translateX(-50%)', background: '#1f2937', color: '#fff',
+                    padding: '12px 24px', borderRadius: 12, fontSize: 13, zIndex: 9999,
+                    boxShadow: '0 4px 16px rgba(0,0,0,0.25)'
+                }}>
+                    {toast}
+                </div>
+            )}
+        </div>
+    );
+}
