@@ -21,6 +21,13 @@ export default function BookDetailPage() {
     const [cart, setCart] = useState(getCart());
     const [toast, setToast] = useState('');
     const [isSidebarOpen, setIsSidebarOpen] = useState(true);
+    const [showCart, setShowCart] = useState(false);
+    const [showCheckout, setShowCheckout] = useState(false);
+    const [checkoutForm, setCheckoutForm] = useState({ customerName: '', phone: '', address: '' });
+    const [checkoutError, setCheckoutError] = useState('');
+    const [checkoutLoading, setCheckoutLoading] = useState(false);
+
+
 
     useEffect(() => {
         if (!bookId) return;
@@ -32,11 +39,36 @@ export default function BookDetailPage() {
             setBooks(allBooks.filter(b => b.id !== parseInt(bookId) && b.status === 'ACTIVE').slice(0, 4));
         }).catch(() => { })
             .finally(() => setLoading(false));
+
+        // Lắng nghe sự kiện cập nhật giỏ hàng từ quá trình đăng nhập/sync
+        const handleCartUpdate = () => {
+            try { setCart(JSON.parse(localStorage.getItem('cart') || '[]')); } catch { }
+        };
+        window.addEventListener('cartUpdated', handleCartUpdate);
+        return () => window.removeEventListener('cartUpdated', handleCartUpdate);
     }, [bookId]);
+
+    // Tự động đồng bộ giỏ hàng lên server khi có thay đổi (nếu đã đăng nhập)
+    useEffect(() => {
+        if (me && !loading) {
+            const timeout = setTimeout(() => {
+                fetch('/dem_login-0.0.1-SNAPSHOT/api/users/cart/sync', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ 
+                        username: me.username, 
+                        cartData: JSON.stringify(cart) 
+                    })
+                }).catch(e => console.error('Lỗi đồng bộ giỏ hàng:', e));
+            }, 1000); // debounce 1s
+            return () => clearTimeout(timeout);
+        }
+    }, [cart, me, loading]);
 
     const showToastMsg = (msg) => { setToast(msg); setTimeout(() => setToast(''), 3000); };
 
     const addToCart = (b) => {
+
         const ex = cart.find(i => i.id === b.id);
         let newCart;
         if (ex) {
@@ -53,6 +85,65 @@ export default function BookDetailPage() {
     };
 
     const cartCount = cart.reduce((s, i) => s + i.quantity, 0);
+    const cartTotal = cart.reduce((s, i) => s + i.price * i.quantity, 0);
+
+    const removeFromCart = (id) => {
+        const newCart = cart.filter(i => i.id !== id);
+        setCart(newCart); saveCart(newCart);
+    };
+
+    const handleCheckout = () => {
+        if (!me) {
+            localStorage.setItem('redirectAfterLogin', '/cart');
+            showToastMsg('Vui lòng đăng nhập để thanh toán!');
+            setTimeout(() => navigate('/login'), 1500);
+            return;
+        }
+        // Pre-fill form with profile
+        if (me.username) {
+            fetch(`/dem_login-0.0.1-SNAPSHOT/api/profiles/${me.username}`)
+                .then(r => r.json())
+                .then(data => {
+                    if (data) setCheckoutForm({
+                        customerName: data.customerName || me.username,
+                        phone: data.phone || '',
+                        address: data.address || ''
+                    });
+                }).catch(() => setCheckoutForm(f => ({ ...f, customerName: me.username })));
+        }
+        setShowCheckout(true);
+        setShowCart(false);
+    };
+
+    const handlePlaceOrder = async (e) => {
+        e.preventDefault();
+        if (!checkoutForm.customerName.trim()) { setCheckoutError('Vui lòng nhập tên người nhận'); return; }
+        if (!checkoutForm.phone.trim()) { setCheckoutError('Vui lòng nhập số điện thoại'); return; }
+        if (!checkoutForm.address.trim()) { setCheckoutError('Vui lòng nhập địa chỉ giao hàng'); return; }
+        setCheckoutLoading(true); setCheckoutError('');
+        try {
+            const res = await fetch('/dem_login-0.0.1-SNAPSHOT/api/orders', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    username: me.username,
+                    customerName: checkoutForm.customerName,
+                    phone: checkoutForm.phone,
+                    address: checkoutForm.address,
+                    items: cart.map(i => ({ bookId: i.id, quantity: i.quantity }))
+                })
+            });
+            const data = await res.json();
+            if (res.ok && (data.success === 'true' || data.success === true)) {
+                setShowCheckout(false);
+                setCart([]); saveCart([]);
+                showToastMsg('🎉 Đặt hàng thành công!');
+            } else {
+                setCheckoutError(data.message || 'Đặt hàng thất bại');
+            }
+        } catch { setCheckoutError('Lỗi kết nối server'); }
+        finally { setCheckoutLoading(false); }
+    };
 
     if (loading) return (
         <div style={{
@@ -107,7 +198,7 @@ export default function BookDetailPage() {
                                     <div className="sidebar-role">{me.role}</div>
                                 </div>
                             </div>
-                            <button className="btn-logout" onClick={logout} title="Đăng xuất">
+                            <button className="btn-logout" onClick={() => { logout(); setCart([]); saveCart([]); }} title="Đăng xuất">
                                 <svg viewBox="0 0 24 24" width="18" height="18" stroke="currentColor" strokeWidth="2" fill="none">
                                     <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
                                     <polyline points="16 17 21 12 16 7" />
@@ -135,14 +226,34 @@ export default function BookDetailPage() {
                     </button>
                 )}
 
-                {/* Breadcrumb */}
-                <div style={{ fontSize: 13, color: '#6b7280', marginBottom: 20 }}>
-                    <a href="/dem_login-0.0.1-SNAPSHOT/cart"
-                        style={{ color: '#4f46e5', textDecoration: 'none', fontWeight: 600 }}>
-                        ← Danh sách sách
-                    </a>
-                    <span style={{ margin: '0 8px' }}>›</span>
-                    <span>{book.title}</span>
+                {/* Header Section */}
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
+                    {/* Breadcrumb */}
+                    <div style={{ fontSize: 13, color: '#6b7280' }}>
+                        <a href="/dem_login-0.0.1-SNAPSHOT/cart"
+                            style={{ color: '#4f46e5', textDecoration: 'none', fontWeight: 600 }}>
+                            ← Danh sách sách
+                        </a>
+                        <span style={{ margin: '0 8px' }}>›</span>
+                        <span>{book.title}</span>
+                    </div>
+
+                    {/* Cart Icon - click to go to cart page */}
+                    <div
+                        style={{ position: 'relative', cursor: 'pointer', padding: '8px', background: '#fff', borderRadius: '50%', boxShadow: '0 2px 8px rgba(0,0,0,0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center', width: 40, height: 40 }}
+                        onClick={() => navigate('/cart', { state: { tab: 'cart' } })}
+                        title="Đi đến giỏ hàng"
+                    >
+                        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#ee4d2d" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                            <circle cx="9" cy="21" r="1"></circle><circle cx="20" cy="21" r="1"></circle>
+                            <path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6"></path>
+                        </svg>
+                        {cartCount > 0 && (
+                            <span style={{ position: 'absolute', top: -4, right: -4, background: '#ee4d2d', color: '#fff', borderRadius: '50%', minWidth: 20, height: 20, fontSize: 12, fontWeight: 'bold', display: 'flex', alignItems: 'center', justifyContent: 'center', border: '2px solid #f0f2ff' }}>
+                                {cartCount}
+                            </span>
+                        )}
+                    </div>
                 </div>
 
                 {/* Book detail card */}
@@ -208,16 +319,15 @@ export default function BookDetailPage() {
                         {/* Price */}
                         <div style={{
                             display: 'flex', alignItems: 'center', gap: 16,
-                            padding: '16px 20px', background: '#f8f7ff',
-                            borderRadius: 12, border: '1.5px solid #ede9fe'
+                            padding: '16px 20px', background: '#fafafa',
+                            borderRadius: 4, border: 'none'
                         }}>
-                            <span style={{ fontSize: 32, fontWeight: 800, color: '#4f46e5' }}>
+                            <span style={{ fontSize: 32, fontWeight: 500, color: '#ee4d2d' }}>
                                 {fmt(book.price)}
                             </span>
                             <span style={{
-                                fontSize: 13, color: book.quantity <= 5 ? '#ef4444' : '#6b7280',
-                                fontWeight: 600, background: book.quantity <= 5 ? '#fef2f2' : '#f3f4f6',
-                                padding: '4px 10px', borderRadius: 20
+                                fontSize: 13, color: book.quantity <= 5 ? '#ef4444' : '#757575',
+                                fontWeight: 500
                             }}>
                                 Còn {book.quantity} cuốn
                             </span>
@@ -243,30 +353,47 @@ export default function BookDetailPage() {
                                 disabled={book.quantity === 0}
                                 onClick={() => addToCart(book)}
                                 style={{
-                                    flex: 1, padding: '14px 24px', border: 'none',
-                                    borderRadius: 12, fontSize: 15, fontWeight: 700,
-                                    background: book.quantity === 0 ? '#f3f4f6'
-                                        : 'linear-gradient(135deg,#4f46e5,#7c3aed)',
-                                    color: book.quantity === 0 ? '#9ca3af' : '#fff',
+                                    flex: 1, padding: '14px 24px', border: book.quantity === 0 ? '1px solid #e5e7eb' : '1px solid #ee4d2d',
+                                    borderRadius: 4, fontSize: 15, fontWeight: 500,
+                                    background: book.quantity === 0 ? '#f3f4f6' : 'rgba(255, 87, 34, 0.1)',
+                                    color: book.quantity === 0 ? '#9ca3af' : '#ee4d2d',
                                     cursor: book.quantity === 0 ? 'not-allowed' : 'pointer',
-                                    boxShadow: book.quantity > 0 ? '0 4px 12px rgba(79,70,229,0.3)' : 'none',
-                                    transition: 'all .2s'
-                                }}>
-                                {book.quantity === 0 ? 'Hết hàng' : '+ Thêm vào giỏ hàng'}
+                                    transition: 'all .2s',
+                                    display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px'
+                                }}
+                                onMouseEnter={(e) => { if (book.quantity > 0) e.currentTarget.style.background = 'rgba(255, 87, 34, 0.2)'; }}
+                                onMouseLeave={(e) => { if (book.quantity > 0) e.currentTarget.style.background = 'rgba(255, 87, 34, 0.1)'; }}>
+                                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                    <circle cx="9" cy="21" r="1"></circle><circle cx="20" cy="21" r="1"></circle>
+                                    <path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6"></path>
+                                </svg>
+                                {book.quantity === 0 ? 'Hết hàng' : 'Thêm vào giỏ hàng'}
                             </button>
-                            <button onClick={() => navigate('/cart', { state: { tab: 'cart' } })}
+                            <button
+                                disabled={book.quantity === 0}
+                                onClick={() => {
+                                    if (book.quantity > 0) {
+                                        addToCart(book);
+                                        navigate('/cart', { state: { tab: 'cart' } });
+                                    }
+                                }}
                                 style={{
-                                    padding: '14px 24px', border: '1.5px solid #e5e7eb',
-                                    borderRadius: 12, fontSize: 15, fontWeight: 600,
-                                    color: '#374151', textDecoration: 'none', cursor: 'pointer',
-                                    background: '#fff', transition: 'all .2s',
-                                    display: 'flex', alignItems: 'center'
-                                }}>
-                                🛒 Xem giỏ {cartCount > 0 && `(${cartCount})`}
+                                    flex: 1, padding: '14px 24px', border: 'none',
+                                    borderRadius: 4, fontSize: 15, fontWeight: 500,
+                                    color: '#fff', cursor: book.quantity === 0 ? 'not-allowed' : 'pointer',
+                                    background: book.quantity === 0 ? '#d1d5db' : '#ee4d2d',
+                                    transition: 'all .2s',
+                                    display: 'flex', alignItems: 'center', justifyContent: 'center'
+                                }}
+                                onMouseEnter={(e) => { if (book.quantity > 0) e.currentTarget.style.background = '#f05d40'; }}
+                                onMouseLeave={(e) => { if (book.quantity > 0) e.currentTarget.style.background = '#ee4d2d'; }}>
+                                Mua ngay
                             </button>
                         </div>
                     </div>
                 </div>
+
+
 
                 {/* Related books */}
                 {books.length > 0 && (
@@ -328,6 +455,79 @@ export default function BookDetailPage() {
                     boxShadow: '0 4px 16px rgba(0,0,0,0.25)'
                 }}>
                     {toast}
+                </div>
+            )}
+
+
+
+            {/* ===== CHECKOUT MODAL ===== */}
+            {showCheckout && (
+                <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999, padding: 16 }}
+                    onClick={() => setShowCheckout(false)}>
+                    <div style={{ background: '#fff', borderRadius: 8, width: '100%', maxWidth: 520, boxShadow: '0 20px 60px rgba(0,0,0,0.2)', overflow: 'hidden' }}
+                        onClick={e => e.stopPropagation()}>
+                        <div style={{ background: '#ee4d2d', padding: '16px 20px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                            <span style={{ color: '#fff', fontWeight: 700, fontSize: 17 }}>🛒 Xác nhận đặt hàng</span>
+                            <button onClick={() => setShowCheckout(false)} style={{ background: 'rgba(255,255,255,0.2)', border: 'none', borderRadius: '50%', width: 30, height: 30, color: '#fff', cursor: 'pointer', fontSize: 16, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>✕</button>
+                        </div>
+                        <form onSubmit={handlePlaceOrder}>
+                            <div style={{ padding: '20px 24px', maxHeight: '70vh', overflowY: 'auto' }}>
+                                {/* Order Summary */}
+                                <div style={{ background: '#fff8f6', border: '1px solid #fde8e2', borderRadius: 8, padding: 16, marginBottom: 20 }}>
+                                    <div style={{ fontSize: 13, fontWeight: 700, color: '#ee4d2d', marginBottom: 12 }}>📦 Sản phẩm đặt mua</div>
+                                    {cart.map(item => (
+                                        <div key={item.id} style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0', borderBottom: '1px dashed #fde8e2' }}>
+                                            <div>
+                                                <div style={{ fontSize: 13, fontWeight: 600 }}>{item.title}</div>
+                                                <div style={{ fontSize: 12, color: '#999' }}>x{item.quantity} × {fmt(item.price)}</div>
+                                            </div>
+                                            <div style={{ fontWeight: 700, color: '#ee4d2d' }}>{fmt(item.price * item.quantity)}</div>
+                                        </div>
+                                    ))}
+                                    <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 10, paddingTop: 10, borderTop: '2px solid #fde8e2' }}>
+                                        <span style={{ fontWeight: 700 }}>Tổng thanh toán</span>
+                                        <span style={{ fontWeight: 800, fontSize: 18, color: '#ee4d2d' }}>{fmt(cartTotal)}</span>
+                                    </div>
+                                </div>
+                                {/* Delivery fields */}
+                                <div style={{ fontSize: 13, fontWeight: 700, color: '#333', marginBottom: 14, display: 'flex', alignItems: 'center', gap: 8 }}>
+                                    📍 Thông tin giao hàng
+                                </div>
+                                {[
+                                    { label: 'Tên người nhận', key: 'customerName', placeholder: 'Nhập họ và tên', icon: '👤' },
+                                    { label: 'Số điện thoại', key: 'phone', placeholder: '0xxxxxxxxx', icon: '📱' },
+                                    { label: 'Địa chỉ giao hàng', key: 'address', placeholder: 'Số nhà, đường, phường, quận, tỉnh/thành', icon: '🏠' },
+                                ].map(f => (
+                                    <div key={f.key} style={{ marginBottom: 16 }}>
+                                        <label style={{ display: 'block', fontSize: 13, fontWeight: 600, color: '#555', marginBottom: 6 }}>
+                                            {f.label} <span style={{ color: '#ee4d2d' }}>*</span>
+                                        </label>
+                                        <div style={{ position: 'relative' }}>
+                                            <span style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)' }}>{f.icon}</span>
+                                            <input type="text" value={checkoutForm[f.key]}
+                                                onChange={e => setCheckoutForm({ ...checkoutForm, [f.key]: e.target.value })}
+                                                placeholder={f.placeholder}
+                                                style={{ width: '100%', padding: '10px 14px 10px 40px', border: '1.5px solid #e5e7eb', borderRadius: 6, fontSize: 14, boxSizing: 'border-box', outline: 'none' }}
+                                                onFocus={e => e.target.style.borderColor = '#ee4d2d'}
+                                                onBlur={e => e.target.style.borderColor = '#e5e7eb'}
+                                            />
+                                        </div>
+                                    </div>
+                                ))}
+                                {checkoutError && (
+                                    <div style={{ background: '#fef2f2', border: '1px solid #fca5a5', borderRadius: 6, padding: '10px 14px', color: '#dc2626', fontSize: 13 }}>
+                                        ⚠️ {checkoutError}
+                                    </div>
+                                )}
+                            </div>
+                            <div style={{ padding: '16px 24px', borderTop: '1px solid #f3f4f6', display: 'flex', gap: 12, justifyContent: 'flex-end', background: '#fafafa' }}>
+                                <button type="button" onClick={() => setShowCheckout(false)} style={{ padding: '10px 20px', border: '1.5px solid #e5e7eb', borderRadius: 4, background: '#fff', color: '#555', cursor: 'pointer', fontSize: 14, fontWeight: 600 }}>Hủy</button>
+                                <button type="submit" disabled={checkoutLoading} style={{ padding: '10px 28px', background: '#ee4d2d', color: '#fff', border: 'none', borderRadius: 4, fontWeight: 700, fontSize: 15, cursor: checkoutLoading ? 'not-allowed' : 'pointer', minWidth: 150, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}>
+                                    {checkoutLoading ? 'Đang xử lý...' : '🛒 Đặt hàng ngay'}
+                                </button>
+                            </div>
+                        </form>
+                    </div>
                 </div>
             )}
         </div>

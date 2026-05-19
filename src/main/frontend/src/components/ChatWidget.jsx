@@ -81,7 +81,12 @@ function ChatPanel({ onClose, username }) {
         try {
             const data = await api.getChatHistory(sid);
             if (data?.length > 0) { setMessages(data); setPhase('chat'); }
-        } catch { }
+        } catch (err) {
+            if (err.message === '401' || err.message === '403') {
+                localStorage.removeItem(`cs_${username}`);
+                setSessionId('');
+            }
+        }
     };
 
     const send = async (text) => {

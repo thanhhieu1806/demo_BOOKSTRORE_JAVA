@@ -6,6 +6,7 @@ import org.springframework.stereotype.Service;
 import com.example.dem_login.model.Book;
 import java.util.Map;
 import java.time.LocalDateTime;
+import java.nio.file.Paths;
 
 @Service
 public class BookService {
@@ -39,6 +40,7 @@ public class BookService {
         req.setCreateDate(LocalDateTime.now());
         req.setUpdateDate(LocalDateTime.now());
         req.setStatus(Book.BookStatus.ACTIVE);
+        normalizePdfFields(req);
         bookRepository.save(req);
         return Map.of("success", "true", "message", "Thêm sách thành công");
     }
@@ -61,11 +63,25 @@ public class BookService {
                 book.setStatus(req.getStatus());
             if (req.getImageUrl() != null)
                 book.setImageUrl(req.getImageUrl());
-
+            if (req.getPdfPath() != null) {
+                book.setPdfPath(req.getPdfPath());
+                if (req.getPdfName() != null) {
+                    book.setPdfName(req.getPdfName());
+                }
+            }
+            normalizePdfFields(book);
             book.setUpdateDate(LocalDateTime.now());
             bookRepository.save(book);
             return Map.of("success", "true", "message", "Cập nhật thành công!");
         }).orElseGet(() -> Map.of("success", "false", "message", "Không tìm thấy sách!"));
+    }
+
+    private void normalizePdfFields(Book book) {
+        if (book.getPdfPath() != null && !book.getPdfPath().isBlank()
+                && (book.getPdfName() == null || book.getPdfName().isBlank())) {
+            String name = Paths.get(book.getPdfPath().replace('\\', '/')).getFileName().toString();
+            book.setPdfName(name);
+        }
     }
 
     public Map<String, String> deleteBook(Long id) {

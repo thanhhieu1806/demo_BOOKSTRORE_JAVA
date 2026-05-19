@@ -1,3 +1,4 @@
+// File: CustomerProfileRepository.java
 package com.example.dem_login.repository;
 
 import com.example.dem_login.model.CustomerProfile;
@@ -6,6 +7,7 @@ import org.springframework.stereotype.Repository;
 import java.util.Optional;
 
 @Repository
-public interface CustomerProfileRepository extends JpaRepository<CustomerProfile, Long> {
+public interface CustomerProfileRepository // ← đúng tên
+        extends JpaRepository<CustomerProfile, Long> {
     Optional<CustomerProfile> findByUsername(String username);
 }

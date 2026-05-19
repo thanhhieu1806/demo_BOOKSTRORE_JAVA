@@ -1,18 +1,18 @@
 import { useState } from 'react';
-import { useAuth } from '../context/AuthContext';
+import { useNavigate } from 'react-router-dom';
 import api from '../service/api';
 import { Eye, EyeOff } from 'lucide-react';
 
 export default function RegisterPage() {
-    const { login } = useAuth();
-    const [form, setForm] = useState({ username: '', email: '', password: '', confirmPassword: '', phone: '', address: '' });
+    const navigate = useNavigate();
+    const [form, setForm] = useState({ username: '', fullName: '', email: '', password: '', confirmPassword: '', phone: '', address: '' });
     const [error, setError] = useState('');
     const [loading, setLoading] = useState(false);
     const [showPass, setShowPass] = useState(false);
 
     const handleSubmit = async (e) => {
         e.preventDefault();
-        if (!form.username || !form.email || !form.password) {
+        if (!form.username || !form.email || !form.password || !form.fullName) {
             setError('Vui lòng điền đầy đủ thông tin'); return;
         }
         if (form.password.length < 6) {
@@ -31,21 +31,15 @@ export default function RegisterPage() {
         try {
             const { ok, data } = await api.register({
                 username: form.username,
+                fullName: form.fullName,
                 email: form.email,
                 password: form.password,
                 phone: form.phone,
                 address: form.address,
             });
             if (ok && data.success === 'true') {
-                // Tự động login sau khi đăng ký
-                const res = await api.login(form.username, form.password);
-                if (res.ok && res.data.success) {
-                    login({
-                        username: res.data.username,
-                        role: res.data.role,
-                        mustChangePassword: false,
-                    });
-                }
+                alert('Đăng ký tài khoản thành công! Vui lòng đăng nhập.');
+                navigate('/login');
             } else {
                 setError(data.message || 'Đăng ký thất bại');
             }
@@ -61,11 +55,17 @@ export default function RegisterPage() {
 
                 <form onSubmit={handleSubmit} className="login-form">
                     <div className="field-group">
-                        <label>Tên đăng nhập</label>
+                        <label>Tên đăng nhập <span className="req" style={{color: 'red'}}>*</span></label>
                         <input type="text" placeholder="Nhập username"
                             value={form.username}
                             onChange={e => setForm({ ...form, username: e.target.value })}
                             autoFocus />
+                    </div>
+                    <div className="field-group">
+                        <label>Họ và tên <span className="req" style={{color: 'red'}}>*</span></label>
+                        <input type="text" placeholder="Nhập họ và tên đầy đủ"
+                            value={form.fullName}
+                            onChange={e => setForm({ ...form, fullName: e.target.value })} />
                     </div>
                     <div className="field-group">
                         <label>Email</label>

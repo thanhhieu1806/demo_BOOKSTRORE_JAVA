@@ -22,6 +22,12 @@ public class Book {
     @Column(nullable = false)
     private BigDecimal price;
 
+    @Column(name = "pdf_path")
+    private String pdfPath;
+
+    @Column(name = "pdf_name")
+    private String pdfName;
+
     @Column(nullable = false)
     private int quantity;
 
@@ -127,6 +133,23 @@ public class Book {
 
     public void setUpdateDate(LocalDateTime updateDate) {
         this.updateDate = updateDate;
+    }
+
+    // Getter và Setter
+    public String getPdfPath() {
+        return pdfPath;
+    }
+
+    public void setPdfPath(String pdfPath) {
+        this.pdfPath = pdfPath;
+    }
+
+    public String getPdfName() {
+        return pdfName;
+    }
+
+    public void setPdfName(String pdfName) {
+        this.pdfName = pdfName;
     }
 
 }

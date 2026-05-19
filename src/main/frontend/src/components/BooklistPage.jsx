@@ -6,12 +6,14 @@ import api from '../service/api';
 //  Modal Thêm/Sửa Sách 
 function BookFormModal({ book, onClose, onSaved }) {
     const isEdit = !!book;
+    const getPdfUrl = (path) => path ? "/dem_login-0.0.1-SNAPSHOT/uploads/pdfs/" + path.split(/[\/\\]/).pop() : "";
     const [form, setForm] = useState({
         title: book?.title || '',
         author: book?.author || '',
         category: book?.category || '',
         description: book?.description || '',
         imageUrl: book?.imageUrl || '',
+        pdfPath: book?.pdfPath || '',
         price: book?.price || '',
         quantity: book?.quantity ?? 0,
         status: book?.status || 'ACTIVE',
@@ -19,17 +21,39 @@ function BookFormModal({ book, onClose, onSaved }) {
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState('');
 
+    const [imageFile, setImageFile] = useState(null);
+    const [pdfFile,   setPdfFile]   = useState(null);
+    const [uploading, setUploading] = useState(false);
+
+    const handleUpload = async () => {
+        setUploading(true);
+        let imageUrl = form.imageUrl;
+        let pdfPath  = form.pdfPath;
+
+        if (imageFile) {
+            const { ok, data } = await api.uploadImage(imageFile);
+            if (ok && (data.success === 'true' || data.success === true)) imageUrl = data.url;
+        }
+        if (pdfFile) {
+            const { ok, data } = await api.uploadPdf(pdfFile);
+            if (ok && (data.success === 'true' || data.success === true)) pdfPath = data.filePath;
+        }
+        setUploading(false);
+        return { imageUrl, pdfPath };
+    };
+
     const handleSubmit = async (e) => {
         e.preventDefault();
         if (!form.title.trim()) { setError('Tên sách không được trống!'); return; }
         if (!form.price) { setError('Giá không được trống!'); return; }
         setLoading(true); setError('');
         try {
-            const payload = { ...form, price: parseFloat(form.price), quantity: parseInt(form.quantity) };
+            const uploaded = await handleUpload();
+            const payload = { ...form, price: parseFloat(form.price), quantity: parseInt(form.quantity), imageUrl: uploaded.imageUrl, pdfPath: uploaded.pdfPath };
             const { ok, data } = isEdit
                 ? await api.updateBook(book.id, payload)
                 : await api.addBook(payload);
-            if (ok && data.success === 'true') onSaved(data.message);
+            if (ok && (data.success === 'true' || data.success === true)) onSaved(data.message);
             else setError(data.message || 'Thao tác thất bại');
         } catch { setError('Lỗi kết nối server'); }
         finally { setLoading(false); }
@@ -91,10 +115,25 @@ function BookFormModal({ book, onClose, onSaved }) {
                             )}
                         </div>
                         <div className="field-group">
-                            <label>URL ảnh bìa</label>
-                            <input type="text" value={form.imageUrl}
-                                onChange={e => setForm({ ...form, imageUrl: e.target.value })}
-                                placeholder="https://..." />
+                            <label>Ảnh bìa sách</label>
+                            <input type="file" accept="image/*"
+                                onChange={e => setImageFile(e.target.files[0])} />
+                            {form.imageUrl && (
+                                <img src={form.imageUrl} alt="preview"
+                                    style={{ width: 80, height: 100,
+                                        objectFit: 'cover', marginTop: 8, borderRadius: 6 }} />
+                            )}
+                        </div>
+                        <div className="field-group">
+                            <label>File PDF sách</label>
+                            <input type="file" accept=".pdf"
+                                onChange={e => setPdfFile(e.target.files[0])} />
+                            {form.pdfPath && (
+                                <a href={getPdfUrl(form.pdfPath)} target="_blank" rel="noreferrer"
+                                    style={{ fontSize: 12, color: '#4f46e5' }}>
+                                    📄 Xem PDF hiện tại
+                                </a>
+                            )}
                         </div>
                         <div className="field-group">
                             <label>Mô tả</label>

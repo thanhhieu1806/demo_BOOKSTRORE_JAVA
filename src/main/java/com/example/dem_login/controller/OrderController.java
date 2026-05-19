@@ -84,7 +84,29 @@ public class OrderController {
         return profileRepo.findByUsername(username)
                 .map(ResponseEntity::ok)
                 .orElse(ResponseEntity.notFound().build());
+    }
 
+    @PostMapping("/profile/update")
+    public ResponseEntity<Map<String, String>> updateProfile(@RequestBody Map<String, String> body) {
+        String username = body.get("username");
+        String customerName = body.get("customerName");
+        String phone = body.get("phone");
+        String address = body.get("address");
+        String email = body.get("email");
+
+        CustomerProfile profile = profileRepo.findByUsername(username).orElse(new CustomerProfile());
+        profile.setUsername(username);
+        profile.setCustomerName(customerName);
+        profile.setPhone(phone);
+        profile.setAddress(address);
+        profile.setEmail(email);
+        profile.setUpdateDate(java.time.LocalDateTime.now());
+        if (profile.getCreateDate() == null) {
+            profile.setCreateDate(java.time.LocalDateTime.now());
+        }
+        profileRepo.save(profile);
+
+        return ResponseEntity.ok(Map.of("success", "true", "message", "Cập nhật thành công"));
     }
 
 }

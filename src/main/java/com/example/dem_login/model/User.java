@@ -49,6 +49,9 @@ public class User {
     @Column(name = "must_change_password")
     private boolean mustChangePassword;
 
+    @Column(name = "cart_data", columnDefinition = "NVARCHAR(MAX)")
+    private String cartData;
+
     public enum UserStatus {
         ACTIVE, Temp_Lock, Delete
     }
@@ -163,5 +166,13 @@ public class User {
 
     public void setMustChangePassword(boolean mustChangePassword) {
         this.mustChangePassword = mustChangePassword;
+    }
+
+    public String getCartData() {
+        return cartData;
+    }
+
+    public void setCartData(String cartData) {
+        this.cartData = cartData;
     }
 }

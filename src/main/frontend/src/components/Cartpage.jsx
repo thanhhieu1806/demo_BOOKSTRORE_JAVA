@@ -21,7 +21,7 @@ function CheckoutModal({ cart, username, onClose, onSuccess }) {
                 .then(data => {
                     if (data) {
                         setForm({
-                            customerName: data.customerName || '',
+                            customerName: data.customerName || username,
                             phone: data.phone || '',
                             address: data.address || ''
                         });
@@ -55,69 +55,313 @@ function CheckoutModal({ cart, username, onClose, onSuccess }) {
     };
 
     return (
-        <div className="modal-overlay" onClick={onClose}>
-            <div className="modal-box" style={{ maxWidth: 500 }} onClick={e => e.stopPropagation()}>
-                <div className="modal-header">
-                    <h2>🛒 Xác nhận đặt hàng</h2>
-                    <button className="modal-close" onClick={onClose}>✕</button>
+        <div style={{
+            position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            zIndex: 9999, padding: 16, backdropFilter: 'blur(4px)'
+        }} onClick={onClose}>
+            <div style={{
+                background: '#fff', borderRadius: 12, width: '100%', maxWidth: 480,
+                boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.25)', overflow: 'hidden',
+                animation: 'modalSlideIn 0.3s ease-out'
+            }} onClick={e => e.stopPropagation()}>
+                <style>{`
+                    @keyframes modalSlideIn {
+                        from { transform: translateY(20px); opacity: 0; }
+                        to { transform: translateY(0); opacity: 1; }
+                    }
+                    @keyframes spin { to { transform: rotate(360deg); } }
+                `}</style>
+
+                {/* Header - Shopee Style */}
+                <div style={{
+                    background: '#ee4d2d', padding: '18px 24px',
+                    display: 'flex', justifyContent: 'space-between', alignItems: 'center'
+                }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                            <circle cx="9" cy="21" r="1"/><circle cx="20" cy="21" r="1"/>
+                            <path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6"/>
+                        </svg>
+                        <span style={{ color: '#fff', fontWeight: 700, fontSize: 18 }}>Xác nhận đặt hàng</span>
+                    </div>
+                    <button onClick={onClose} style={{
+                        background: 'rgba(255,255,255,0.2)', border: 'none', borderRadius: '50%',
+                        width: 32, height: 32, color: '#fff', cursor: 'pointer', fontSize: 18,
+                        display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'background 0.2s'
+                    }} onMouseEnter={e => e.currentTarget.style.background = 'rgba(255,255,255,0.3)'}
+                       onMouseLeave={e => e.currentTarget.style.background = 'rgba(255,255,255,0.2)'}>✕</button>
                 </div>
+
                 <form onSubmit={handleSubmit}>
-                    <div className="modal-body">
-                        {/* Tóm tắt đơn hàng */}
+                    <div style={{ padding: '24px', maxHeight: '75vh', overflowY: 'auto' }}>
+                        
+                        {/* Section: SẢN PHẨM ĐẶT MUA */}
                         <div style={{
-                            background: 'var(--bg-glass)', border: '1px solid var(--border)',
-                            borderRadius: 'var(--radius-sm)', padding: '14px 16px', marginBottom: 4
+                            background: '#fff8f6', border: '1px solid #fde8e2',
+                            borderRadius: 10, padding: '16px 20px', marginBottom: 24
                         }}>
-                            <div style={{
-                                fontSize: 12, fontWeight: 700, textTransform: 'uppercase',
-                                letterSpacing: '0.7px', color: 'var(--text-dim)', marginBottom: 10
+                            <div style={{ 
+                                fontSize: 13, fontWeight: 700, color: '#ee4d2d', 
+                                marginBottom: 14, display: 'flex', alignItems: 'center', gap: 8,
+                                textTransform: 'uppercase', letterSpacing: '0.5px'
                             }}>
-                                Tóm tắt đơn hàng
+                                📦 Sản phẩm đặt mua
                             </div>
-                            {cart.map(item => (
-                                <div key={item.id} style={{
-                                    display: 'flex', justifyContent: 'space-between',
-                                    fontSize: 13, padding: '4px 0', borderBottom: '1px solid var(--border)'
-                                }}>
-                                    <span>{item.title} <span style={{ color: 'var(--text-dim)' }}>x{item.quantity}</span></span>
-                                    <span style={{ fontWeight: 600, color: 'var(--accent)' }}>
-                                        {fmtPrice(item.price * item.quantity)}
-                                    </span>
-                                </div>
-                            ))}
+                            <div style={{ maxHeight: '180px', overflowY: 'auto', marginBottom: 14 }}>
+                                {cart.map(item => (
+                                    <div key={item.id} style={{
+                                        display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start',
+                                        padding: '10px 0', borderBottom: '1px dashed #fde8e2'
+                                    }}>
+                                        <div style={{ flex: 1, paddingRight: 12 }}>
+                                            <div style={{ fontSize: 14, fontWeight: 600, color: '#333', marginBottom: 2 }}>{item.title}</div>
+                                            <div style={{ fontSize: 12, color: '#999' }}>x{item.quantity} × {fmtPrice(item.price)}</div>
+                                        </div>
+                                        <div style={{ fontWeight: 700, color: '#ee4d2d', fontSize: 15 }}>
+                                            {fmtPrice(item.price * item.quantity)}
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
                             <div style={{
-                                display: 'flex', justifyContent: 'space-between',
-                                marginTop: 10, fontWeight: 700, fontSize: 15
+                                display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                                paddingTop: 14, borderTop: '2px solid #fde8e2'
                             }}>
-                                <span>Tổng cộng</span>
-                                <span style={{ color: 'var(--accent)' }}>{fmtPrice(total)}</span>
+                                <span style={{ fontWeight: 700, fontSize: 16, color: '#333' }}>Tổng thanh toán</span>
+                                <span style={{ fontWeight: 800, fontSize: 22, color: '#ee4d2d' }}>{fmtPrice(total)}</span>
                             </div>
                         </div>
 
-                        <div className="field-group">
-                            <label>Tên người nhận <span className="req">*</span></label>
-                            <input type="text" value={form.customerName}
-                                onChange={e => setForm({ ...form, customerName: e.target.value })}
-                                placeholder="Nhập họ và tên" />
+                        {/* Section: Thông tin giao hàng */}
+                        <div style={{ 
+                            fontSize: 14, fontWeight: 700, color: '#333', 
+                            marginBottom: 18, display: 'flex', alignItems: 'center', gap: 8 
+                        }}>
+                            <span style={{ color: '#ee4d2d', fontSize: 18 }}>📍</span> Thông tin giao hàng
                         </div>
-                        <div className="field-group">
-                            <label>Số điện thoại <span className="req">*</span></label>
-                            <input type="text" value={form.phone}
-                                onChange={e => setForm({ ...form, phone: e.target.value })}
-                                placeholder="0xxxxxxxxx" />
-                        </div>
-                        <div className="field-group">
-                            <label>Địa chỉ giao hàng <span className="req">*</span></label>
-                            <input type="text" value={form.address}
-                                onChange={e => setForm({ ...form, address: e.target.value })}
-                                placeholder="Số nhà, đường, phường/xã, quận/huyện, tỉnh/thành" />
-                        </div>
-                        {error && <div className="error-box"><span>✕</span> {error}</div>}
+
+                        {[
+                            { label: 'Tên người nhận', key: 'customerName', placeholder: 'Nhập tên người nhận', type: 'text', icon: '👤' },
+                            { label: 'Số điện thoại', key: 'phone', placeholder: 'Nhập số điện thoại', type: 'tel', icon: '📱' },
+                            { label: 'Địa chỉ giao hàng', key: 'address', placeholder: 'Nhập địa chỉ đầy đủ', type: 'text', icon: '🏠' },
+                        ].map(field => (
+                            <div key={field.key} style={{ marginBottom: 18 }}>
+                                <label style={{ display: 'block', fontSize: 13, fontWeight: 600, color: '#555', marginBottom: 8 }}>
+                                    {field.label} <span style={{ color: '#ee4d2d' }}>*</span>
+                                </label>
+                                <div style={{ position: 'relative' }}>
+                                    <span style={{ 
+                                        position: 'absolute', left: 16, top: '50%', 
+                                        transform: 'translateY(-50%)', fontSize: 18,
+                                        pointerEvents: 'none', filter: 'grayscale(100%)', opacity: 0.7
+                                    }}>{field.icon}</span>
+                                    <input
+                                        type={field.type}
+                                        value={form[field.key]}
+                                        onChange={e => setForm({ ...form, [field.key]: e.target.value })}
+                                        placeholder={field.placeholder}
+                                        style={{
+                                            width: '100%', padding: '14px 16px 14px 48px',
+                                            border: '1.5px solid #e5e7eb', borderRadius: 10,
+                                            fontSize: 15, boxSizing: 'border-box', outline: 'none',
+                                            transition: 'all 0.2s', background: '#f9fafb'
+                                        }}
+                                        onFocus={e => {
+                                            e.target.style.borderColor = '#ee4d2d';
+                                            e.target.style.background = '#fff';
+                                            e.target.style.boxShadow = '0 0 0 4px rgba(238, 77, 45, 0.1)';
+                                        }}
+                                        onBlur={e => {
+                                            e.target.style.borderColor = '#e5e7eb';
+                                            e.target.style.background = '#f9fafb';
+                                            e.target.style.boxShadow = 'none';
+                                        }}
+                                    />
+                                </div>
+                            </div>
+                        ))}
+
+                        {error && (
+                            <div style={{
+                                background: '#fef2f2', border: '1px solid #fca5a5', borderRadius: 10,
+                                padding: '12px 16px', color: '#dc2626', fontSize: 14, 
+                                display: 'flex', alignItems: 'center', gap: 10, marginTop: 12
+                            }}>
+                                <span style={{ fontSize: 18 }}>⚠️</span> {error}
+                            </div>
+                        )}
                     </div>
-                    <div className="modal-footer">
-                        <button type="button" className="btn-cancel" onClick={onClose}>Hủy</button>
-                        <button type="submit" className="btn-primary" disabled={loading}>
-                            {loading ? <span className="spinner" /> : '✅ Đặt hàng'}
+
+                    {/* Footer */}
+                    <div style={{
+                        padding: '20px 24px', borderTop: '1px solid #f3f4f6',
+                        display: 'flex', gap: 16, justifyContent: 'flex-end', background: '#fafafa'
+                    }}>
+                        <button type="button" onClick={onClose} style={{
+                            padding: '12px 28px', border: '1.5px solid #e5e7eb', borderRadius: 8,
+                            background: '#fff', color: '#555', cursor: 'pointer', fontSize: 15, 
+                            fontWeight: 600, transition: 'all 0.2s'
+                        }} onMouseEnter={e => e.currentTarget.style.background = '#f3f4f6'}
+                           onMouseLeave={e => e.currentTarget.style.background = '#fff'}>
+                            Hủy
+                        </button>
+                        <button type="submit" disabled={loading} style={{
+                            padding: '12px 36px', background: loading ? '#f9a58a' : '#ee4d2d',
+                            color: '#fff', border: 'none', borderRadius: 8, fontWeight: 700,
+                            fontSize: 16, cursor: loading ? 'not-allowed' : 'pointer',
+                            display: 'flex', alignItems: 'center', gap: 10, transition: 'all 0.2s',
+                            minWidth: 180, justifyContent: 'center', boxShadow: '0 4px 12px rgba(238, 77, 45, 0.2)'
+                        }}
+                            onMouseEnter={e => { if (!loading) e.currentTarget.style.background = '#d44226'; }}
+                            onMouseLeave={e => { if (!loading) e.currentTarget.style.background = '#ee4d2d'; }}>
+                            {loading
+                                ? <><div style={{ width: 18, height: 18, border: '2px solid rgba(255,255,255,0.3)', borderTopColor: '#fff', borderRadius: '50%', animation: 'spin 0.8s linear infinite' }} /> Đang xử lý...</>
+                                : <>🛒 Đặt hàng ngay</>
+                            }
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    );
+}
+
+// Modal Profile (Xem và chỉnh sửa thông tin)
+function ProfileModal({ username, onClose, mandatory = false, onSaveSuccess }) {
+    const [form, setForm] = useState({ customerName: '', phone: '', address: '', email: '' });
+    const [loading, setLoading] = useState(false);
+    const [msg, setMsg] = useState({ type: '', text: '' });
+
+    useEffect(() => {
+        if (username) {
+            setLoading(true);
+            api.getDeliveryProfile(username)
+                .then(data => {
+                    if (data) {
+                        setForm({
+                            customerName: data.customerName || username,
+                            phone: data.phone || '',
+                            address: data.address || '',
+                            email: data.email || ''
+                        });
+                    }
+                })
+                .catch(err => console.log('Lỗi lấy profile:', err))
+                .finally(() => setLoading(false));
+        }
+    }, [username]);
+
+    const handleSave = async (e) => {
+        e.preventDefault();
+        setLoading(true); setMsg({ type: '', text: '' });
+        try {
+            const res = await fetch('/dem_login-0.0.1-SNAPSHOT/api/orders/profile/update', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    username,
+                    customerName: form.customerName,
+                    phone: form.phone,
+                    address: form.address,
+                    email: form.email
+                })
+            });
+            const data = await res.json();
+            if (res.ok && data.success === 'true') {
+                setMsg({ type: 'success', text: 'Cập nhật thông tin thành công!' });
+                if (onSaveSuccess) onSaveSuccess(form.customerName);
+                setTimeout(onClose, 1500);
+            } else {
+                setMsg({ type: 'error', text: data.message || 'Cập nhật thất bại' });
+            }
+        } catch { setMsg({ type: 'error', text: 'Lỗi kết nối server' }); }
+        finally { setLoading(false); }
+    };
+
+    return (
+        <div style={{
+            position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            zIndex: 9999, padding: 16, backdropFilter: 'blur(4px)'
+        }} onClick={mandatory ? undefined : onClose}>
+            <div style={{
+                background: '#fff', borderRadius: 16, width: '100%', maxWidth: 440,
+                boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.25)', overflow: 'hidden',
+                animation: 'modalSlideIn 0.3s ease-out'
+            }} onClick={e => e.stopPropagation()}>
+                <div style={{ background: 'var(--accent)', padding: '20px 24px', color: '#fff', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <h3 style={{ margin: 0, fontSize: 18, fontWeight: 700 }}>👤 Thông tin cá nhân</h3>
+                    {!mandatory && (
+                        <button onClick={onClose} style={{ background: 'none', border: 'none', color: '#fff', fontSize: 20, cursor: 'pointer' }}>✕</button>
+                    )}
+                </div>
+
+                {mandatory && (
+                    <div style={{
+                        background: '#fff7ed', borderLeft: '4px solid #f97316',
+                        padding: '12px 20px', display: 'flex', alignItems: 'flex-start', gap: 10
+                    }}>
+                        <span style={{ fontSize: 20 }}>📋</span>
+                        <div>
+                            <div style={{ fontWeight: 700, color: '#c2410c', fontSize: 14 }}>Cập nhật thông tin bắt buộc</div>
+                            <div style={{ fontSize: 13, color: '#9a3412', marginTop: 2 }}>
+                                Bạn đăng nhập lần đầu bằng Google. Vui lòng điền đầy đủ thông tin để tiếp tục sử dụng.
+                            </div>
+                        </div>
+                    </div>
+                )}
+
+                <form onSubmit={handleSave} style={{ padding: 24 }}>
+                    {[
+                        { label: 'Họ và tên', key: 'customerName', icon: '👤' },
+                        { label: 'Số điện thoại', key: 'phone', icon: '📱' },
+                        { label: 'Email liên hệ', key: 'email', icon: '✉️' },
+                        { label: 'Địa chỉ giao hàng', key: 'address', icon: '🏠' },
+                    ].map(f => (
+                        <div key={f.key} style={{ marginBottom: 16 }}>
+                            <label style={{ display: 'block', fontSize: 13, fontWeight: 600, color: '#555', marginBottom: 6 }}>{f.label}</label>
+                            <div style={{ position: 'relative' }}>
+                                <span style={{ position: 'absolute', left: 14, top: '50%', transform: 'translateY(-50%)', opacity: 0.6 }}>{f.icon}</span>
+                                <input
+                                    type="text"
+                                    value={form[f.key]}
+                                    onChange={e => setForm({ ...form, [f.key]: e.target.value })}
+                                    style={{
+                                        width: '100%', padding: '12px 14px 12px 42px',
+                                        border: '1.5px solid #e5e7eb', borderRadius: 10,
+                                        fontSize: 14, outline: 'none', transition: 'all 0.2s'
+                                    }}
+                                    onFocus={e => e.target.style.borderColor = 'var(--accent)'}
+                                    onBlur={e => e.target.style.borderColor = '#e5e7eb'}
+                                />
+                            </div>
+                        </div>
+                    ))}
+
+                    {msg.text && (
+                        <div style={{
+                            padding: 12, borderRadius: 8, marginBottom: 16, fontSize: 13, fontWeight: 600,
+                            background: msg.type === 'success' ? '#ecfdf5' : '#fef2f2',
+                            color: msg.type === 'success' ? '#10b981' : '#ef4444',
+                            border: `1px solid ${msg.type === 'success' ? '#10b981' : '#ef4444'}`
+                        }}>
+                            {msg.type === 'success' ? '✅' : '⚠️'} {msg.text}
+                        </div>
+                    )}
+
+                    <div style={{ display: 'flex', gap: 12, marginTop: 8 }}>
+                        {!mandatory && (
+                            <button type="button" onClick={onClose} style={{
+                                flex: 1, padding: '12px', borderRadius: 10, border: '1.5px solid #e5e7eb',
+                                background: '#fff', color: '#555', fontWeight: 600, cursor: 'pointer'
+                            }}>Đóng</button>
+                        )}
+                        <button type="submit" disabled={loading} style={{
+                            flex: mandatory ? 'auto' : 1, padding: '12px', borderRadius: 10, border: 'none',
+                            background: 'var(--accent)', color: '#fff', fontWeight: 700, cursor: loading ? 'not-allowed' : 'pointer'
+                        }}>
+                            {loading ? 'Đang lưu...' : 'Lưu thay đổi'}
                         </button>
                     </div>
                 </form>
@@ -128,7 +372,7 @@ function CheckoutModal({ cart, username, onClose, onSuccess }) {
 
 //  Main Cart Page 
 export default function CartPage() {
-    const { user: me, logout } = useAuth();
+    const { user: me, logout, updateDisplayName } = useAuth();
     const navigate = useNavigate();
     const location = useLocation();
     const isAdmin = me?.role === 'ADMIN';
@@ -138,6 +382,8 @@ export default function CartPage() {
     const [loadingBooks, setLoadingBooks] = useState(true);
     const [search, setSearch] = useState('');
     const [showCheckout, setShowCheckout] = useState(false);
+    const [showProfile, setShowProfile] = useState(false);
+    const [profileMandatory, setProfileMandatory] = useState(false);
     const [toast, setToast] = useState('');
     const [isSidebarOpen, setIsSidebarOpen] = useState(true);
     const [activeTab, setActiveTab] = useState(location.state?.tab || 'shop'); // 'shop' | 'cart'
@@ -147,7 +393,46 @@ export default function CartPage() {
             .then(data => setBooks(data.filter(b => b.status === 'ACTIVE')))
             .catch(() => showToastMsg('Không thể tải danh sách sách'))
             .finally(() => setLoadingBooks(false));
+
+        // Lắng nghe sự kiện cập nhật giỏ hàng từ quá trình đăng nhập/sync
+        const handleCartUpdate = () => {
+            try { setCart(JSON.parse(localStorage.getItem('cart') || '[]')); } catch { }
+        };
+        window.addEventListener('cartUpdated', handleCartUpdate);
+        return () => window.removeEventListener('cartUpdated', handleCartUpdate);
     }, []);
+
+    // Tự động mở modal thanh toán sau khi đăng nhập nếu trước đó đang dở dang
+    useEffect(() => {
+        if (me && localStorage.getItem('autoCheckout') === 'true') {
+            localStorage.removeItem('autoCheckout');
+            setActiveTab('cart');
+            setShowCheckout(true);
+        }
+        // Bắt buộc cập nhật thông tin lần đầu (Google)
+        if (me && localStorage.getItem('mustUpdateProfile') === 'true') {
+            localStorage.removeItem('mustUpdateProfile');
+            setProfileMandatory(true);
+            setShowProfile(true);
+        }
+    }, [me]);
+
+    // Tự động đồng bộ giỏ hàng lên server khi có thay đổi (nếu đã đăng nhập)
+    useEffect(() => {
+        if (me && !loadingBooks) {
+            const timeout = setTimeout(() => {
+                fetch('/dem_login-0.0.1-SNAPSHOT/api/users/cart/sync', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ 
+                        username: me.username, 
+                        cartData: JSON.stringify(cart) 
+                    })
+                }).catch(e => console.error('Lỗi đồng bộ giỏ hàng:', e));
+            }, 1000); // debounce 1s
+            return () => clearTimeout(timeout);
+        }
+    }, [cart, me, loadingBooks]);
 
     const showToastMsg = (msg) => {
         setToast(msg); setTimeout(() => setToast(''), 3000);
@@ -155,8 +440,9 @@ export default function CartPage() {
 
     const fmtPrice = (p) => new Intl.NumberFormat('vi-VN').format(p) + ' đ';
 
-    //  Cart actions 
+    // THÊM VÀO GIỎ - Cho phép người dùng chưa đăng nhập
     const addToCart = (book) => {
+
         const existing = cart.find(i => i.id === book.id);
         let newCart;
         if (existing) {
@@ -174,6 +460,19 @@ export default function CartPage() {
         showToastMsg(`Đã thêm "${book.title}" vào giỏ!`);
     };
 
+    //  THANH TOÁN - Kiểm tra đăng nhập
+    const handleCheckout = () => {
+        if (!me) {
+            localStorage.setItem('redirectAfterLogin', '/cart');
+            localStorage.setItem('autoCheckout', 'true');
+            showToastMsg('Vui lòng đăng nhập để thanh toán!');
+            setTimeout(() => navigate('/login'), 1500);
+            return;
+        }
+        setShowCheckout(true);
+    };
+
+    //  XEM GIỎ HÀNG - Nếu chưa đăng nhập, giỏ hàng vẫn hiển thị nhưng không thanh toán được
     const updateQty = (id, delta) => {
         const newCart = cart.map(i => {
             if (i.id !== id) return i;
@@ -190,7 +489,9 @@ export default function CartPage() {
         setCart(newCart); saveCart(newCart);
     };
 
-    const clearCart = () => { setCart([]); saveCart([]); };
+    const clearCart = () => {
+        setCart([]); saveCart([]);
+    };
 
     const cartTotal = cart.reduce((s, i) => s + i.price * i.quantity, 0);
     const cartCount = cart.reduce((s, i) => s + i.quantity, 0);
@@ -203,7 +504,9 @@ export default function CartPage() {
 
     const handleLogout = () => {
         logout();
-        navigate('/login', { replace: true });
+        // Cập nhật state giỏ hàng rỗng để giao diện load lại ngay
+        setCart([]);
+        saveCart([]);
     };
 
     return (
@@ -229,17 +532,24 @@ export default function CartPage() {
                     {me ? (
                         <>
                             <div className="sidebar-user">
-                                <div className="avatar">{me.username?.[0]?.toUpperCase()}</div>
+                                <div className="avatar">{(me.displayName || me.username)?.[0]?.toUpperCase()}</div>
                                 <div className="sidebar-user-info">
-                                    <div className="sidebar-username">{me.username}</div>
+                                    <div className="sidebar-username">{me.displayName || me.username}</div>
                                     <div className="sidebar-role">{me.role}</div>
                                 </div>
                             </div>
-                            <button className="btn-logout" onClick={handleLogout} title="Đăng xuất">
-                                <svg viewBox="0 0 24 24" width="18" height="18" stroke="currentColor" strokeWidth="2" fill="none">
-                                    <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" /><polyline points="16 17 21 12 16 7" /><line x1="21" y1="12" x2="9" y2="12" />
-                                </svg>
-                            </button>
+                            <div style={{ display: 'flex', gap: '8px' }}>
+                                <button className="btn-logout" onClick={() => setShowProfile(true)} title="Thông tin cá nhân" style={{ background: 'var(--accent)', color: '#fff', border: 'none' }}>
+                                    <svg viewBox="0 0 24 24" width="18" height="18" stroke="currentColor" strokeWidth="2" fill="none">
+                                        <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" /><circle cx="12" cy="7" r="4" />
+                                    </svg>
+                                </button>
+                                <button className="btn-logout" onClick={handleLogout} title="Đăng xuất" style={{ background: 'var(--accent)', color: '#fff', border: 'none' }}>
+                                    <svg viewBox="0 0 24 24" width="18" height="18" stroke="currentColor" strokeWidth="2" fill="none">
+                                        <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" /><polyline points="16 17 21 12 16 7" /><line x1="21" y1="12" x2="9" y2="12" />
+                                    </svg>
+                                </button>
+                            </div>
                         </>
                     ) : (
                         <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', width: '100%' }}>
@@ -353,19 +663,16 @@ export default function CartPage() {
                                                             {book.quantity > 0 ? `Còn ${book.quantity}` : '0'}
                                                         </span>
                                                     </div>
-                                                    <button
-                                                        className="btn-add-cart"
-                                                        disabled={book.quantity === 0}
-                                                        onClick={() => addToCart(book)}
+                                                    <a
+                                                        href={`/dem_login-0.0.1-SNAPSHOT/book-detail?id=${book.id}`}
+                                                        style={{ textDecoration: 'none', display: 'block' }}
                                                     >
-                                                        {book.quantity === 0 ? 'Hết hàng' : '+ Thêm vào giỏ'}
-                                                    </button>
-                                                    <a href={`/dem_login-0.0.1-SNAPSHOT/book-detail?id=${book.id}`}
-                                                        style={{
-                                                            display: 'block', textAlign: 'center', fontSize: 12,
-                                                            color: '#6b7280', marginTop: 6, textDecoration: 'none'
-                                                        }}>
-                                                        Xem chi tiết →
+                                                        <button
+                                                            className="btn-add-cart"
+                                                            style={{ width: '100%' }}
+                                                        >
+                                                            📖 Xem chi tiết
+                                                        </button>
                                                     </a>
                                                 </div>
                                             </div>
@@ -487,7 +794,7 @@ export default function CartPage() {
                                             width: '100%', marginTop: 16,
                                             justifyContent: 'center', padding: 14
                                         }}
-                                            onClick={() => setShowCheckout(true)}>
+                                            onClick={handleCheckout}>
                                             ✅ Thanh toán
                                         </button>
                                         <button className="btn-cancel" style={{
@@ -516,6 +823,20 @@ export default function CartPage() {
                         clearCart();
                         setActiveTab('shop');
                         showToastMsg(msg);
+                    }}
+                />
+            )}
+
+            {showProfile && (
+                <ProfileModal
+                    username={me?.username}
+                    mandatory={profileMandatory}
+                    onClose={() => {
+                        setShowProfile(false);
+                        setProfileMandatory(false);
+                    }}
+                    onSaveSuccess={(newName) => {
+                        updateDisplayName(newName);
                     }}
                 />
             )}

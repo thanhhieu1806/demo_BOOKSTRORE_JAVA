@@ -197,7 +197,13 @@ const api = {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(payload)
         });
-        return { ok: res.ok, data: await res.json() };
+        let data = {};
+        try {
+            data = await res.json();
+        } catch {
+            data = { success: false, message: 'Phản hồi server không hợp lệ (HTTP ' + res.status + ')' };
+        }
+        return { ok: res.ok, data };
     },
     getChatHistory: async (sessionId) => {
         const res = await fetch(`${BASE}/chat/history/${sessionId}`);
@@ -218,8 +224,54 @@ const api = {
             body: JSON.stringify(payload),
         });
         return { ok: res.ok, data: await res.json() };
-    }
+    },
 
-};
+
+    //login google 
+    loginWithGoogle: async (token) => {
+        const res = await fetch(`${BASE}/auth/google`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ token })
+        });
+        return { ok: res.ok, data: await res.json() };
+    },
+
+    //upload anh bia
+    uploadImage: async (file) => {
+        const formData = new FormData();
+        formData.append('file', file);
+        const res = await fetch(`${BASE}/files/upload-image`, {
+            method: "POST",
+            body: formData
+        });
+        return {
+            ok: res.ok, data: await res.json()
+        };
+    },
+    uploadPdf: async (file) => {
+        const formData = new FormData();
+        formData.append('file', file);
+        const res = await fetch(`${BASE}/files/upload-pdf`, {
+            method: 'POST',
+            body: formData
+        });
+        let data = {};
+        try {
+            data = await res.json();
+        } catch {
+            data = { success: 'false', message: `Upload PDF thất bại (HTTP ${res.status})` };
+        }
+        return { ok: res.ok, data };
+    },
+    //hỏi đáp pdf
+    askPdf: async (username, question, pdfPath) => {
+        const params = new URLSearchParams({ username, question, pdfPath });
+        const res = await fetch(`${BASE}/chat/ask-pdf?${params}`, {
+            method: 'POST'
+        });
+        return { ok: res.ok, data: await res.json() };
+    }
+}
 
 export default api;

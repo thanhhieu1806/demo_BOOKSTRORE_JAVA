@@ -23,6 +23,9 @@ public class CustomerProfile {
     @Column(name = "address", length = 500)
     private String address;
 
+    @Column(name = "email", length = 100)
+    private String email;
+
     @Column(name = "create_date")
     private LocalDateTime createDate;
 
@@ -70,6 +73,14 @@ public class CustomerProfile {
 
     public void setAddress(String address) {
         this.address = address;
+    }
+
+    public String getEmail() {
+        return email;
+    }
+
+    public void setEmail(String email) {
+        this.email = email;
     }
 
     public LocalDateTime getCreateDate() {

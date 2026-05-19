@@ -36,7 +36,9 @@ public class Dto {
         private String message;
         private String role;
         private String username;
-        private boolean mustChangePassword; // bat buoc doi mat khau khi dang nhap lan dau
+        private boolean mustChangePassword;
+        private boolean mustUpdateProfile; // bắt buộc cập nhật thông tin lần đầu (Google)
+        private String displayName; // tên hiển thị (Google name hoặc customerName)
 
         public LoginResponse(boolean success, String message) {
             this.success = success;
@@ -77,6 +79,22 @@ public class Dto {
 
         public boolean isMustChangePassword() {
             return mustChangePassword;
+        }
+
+        public boolean isMustUpdateProfile() {
+            return mustUpdateProfile;
+        }
+
+        public void setMustUpdateProfile(boolean mustUpdateProfile) {
+            this.mustUpdateProfile = mustUpdateProfile;
+        }
+
+        public String getDisplayName() {
+            return displayName;
+        }
+
+        public void setDisplayName(String displayName) {
+            this.displayName = displayName;
         }
     }
 
@@ -599,9 +617,7 @@ public class Dto {
 
     }
 
-    // Chatbox request
-
-    public static class ChatRequets {
+    public static class ChatRequest {
         private String username;
         private String sessionId;
         private String message;
@@ -644,6 +660,14 @@ public class Dto {
             this.sessionId = sessionId;
         }
 
+        public static ChatResponse ok(String message, String sessionId) {
+            return new ChatResponse(true, message, sessionId);
+        }
+
+        public static ChatResponse error(String message, String sessionId) {
+            return new ChatResponse(false, message, sessionId);
+        }
+
         public boolean isSuccess() {
             return success;
         }
@@ -682,9 +706,9 @@ public class Dto {
         }
     }
 
-    // Register
     public static class RegisterRequest {
         private String username;
+        private String fullName;
         private String phone;
         private String email;
         private String password;
@@ -696,6 +720,14 @@ public class Dto {
 
         public void setUsername(String username) {
             this.username = username;
+        }
+
+        public String getFullName() {
+            return fullName;
+        }
+
+        public void setFullName(String fullName) {
+            this.fullName = fullName;
         }
 
         public String getEmail() {
@@ -729,5 +761,41 @@ public class Dto {
         public void setAddress(String address) {
             this.address = address;
         }
+    }
+
+    // ===== SYNC CART =====
+    public static class SyncCartRequest {
+        private String username;
+        private String cartData;
+
+        public String getUsername() {
+            return username;
+        }
+
+        public void setUsername(String username) {
+            this.username = username;
+        }
+
+        public String getCartData() {
+            return cartData;
+        }
+
+        public void setCartData(String cartData) {
+            this.cartData = cartData;
+        }
+    }
+
+    // request verify google idToken
+    public static class GoogleLoginRequest {
+        private String token;// ID tken từ gg
+
+        public String getToken() {
+            return token;
+        }
+
+        public void setToken(String token) {
+            this.token = token;
+        }
+
     }
 }

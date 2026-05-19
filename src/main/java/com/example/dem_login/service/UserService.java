@@ -73,8 +73,16 @@ public class UserService {
         userRepository.save(user);
 
         String roleLogin = user.getRole().name();
-        return new Dto.LoginResponse(true, "Đăng nhập thành công", roleLogin,
+        Dto.LoginResponse response = new Dto.LoginResponse(true, "Đăng nhập thành công", roleLogin,
                 user.getUsername(), user.isMustChangePassword());
+
+        // Lấy tên hiển thị từ CustomerProfile nếu có
+        profileRepository.findByUsername(user.getUsername())
+                .map(CustomerProfile::getCustomerName)
+                .filter(name -> name != null && !name.isBlank())
+                .ifPresent(response::setDisplayName);
+
+        return response;
     }
 
     // REGISTER (đăng ký tài khoản mới)
@@ -111,9 +119,11 @@ public class UserService {
         // Lưu thông tin giao hàng vào customer_profiles
         CustomerProfile profile = new CustomerProfile();
         profile.setUsername(req.getUsername());
-        profile.setCustomerName(req.getUsername());
+        profile.setCustomerName(
+                req.getFullName() != null && !req.getFullName().isBlank() ? req.getFullName() : req.getUsername());
         profile.setPhone(req.getPhone());
         profile.setAddress(req.getAddress() != null ? req.getAddress() : "");
+        profile.setEmail(req.getEmail());
         profile.setCreateDate(LocalDateTime.now());
         profile.setUpdateDate(LocalDateTime.now());
         profileRepository.save(profile); // ← lưu vào SQL Server
@@ -353,5 +363,24 @@ public class UserService {
     private Dto.CreateUserResponse createFailedResponse(boolean success, String message,
             String tempPass, String email, String username) {
         return new Dto.CreateUserResponse(success, message, false, tempPass, email, username);
+    }
+
+    // GET CART DATA
+    public String getCartData(String username) {
+        Optional<User> opt = userRepository.findByUsername(username);
+        if (opt.isEmpty())
+            return "[]";
+        return opt.get().getCartData();
+    }
+
+    // SYNC CART DATA
+    public Map<String, String> syncCartData(Dto.SyncCartRequest req) {
+        Optional<User> opt = userRepository.findByUsername(req.getUsername());
+        if (opt.isEmpty())
+            return Map.of("success", "false", "message", "User không tồn tại");
+        User user = opt.get();
+        user.setCartData(req.getCartData());
+        userRepository.save(user);
+        return Map.of("success", "true", "message", "Đồng bộ giỏ hàng thành công!");
     }
 }
