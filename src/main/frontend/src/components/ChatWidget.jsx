@@ -1,6 +1,16 @@
 import { useEffect, useRef, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import api from '../service/api';
+import { parseAIMessage, ActionButtons, runChatAction } from '../utils/ChatMessageRenderer';
+
+const getCart = () => {
+    try { return JSON.parse(localStorage.getItem('cart') || '[]'); } catch { return []; }
+};
+const saveCart = (cart) => {
+    localStorage.setItem('cart', JSON.stringify(cart));
+    window.dispatchEvent(new Event('cartUpdated'));
+};
 
 const QUICK_ACTIONS_TOP = [
     { label: 'Tìm sách hay', sub: 'Gợi ý sách theo sở thích của bạn' },
@@ -12,7 +22,80 @@ const FAQ = [
     'Có sách về lập trình không?',
 ];
 
-/*  Typing dots  */
+/* ─── MARKDOWN RENDERER ─────────────────────────────────────────────────── */
+
+/**
+ * Chuyển chuỗi Markdown thành HTML an toàn.
+ * Hỗ trợ: **bold**, *italic*, `inline-code`, ```block```,
+ *         # Heading, ## H2, ### H3, > blockquote, - / • / 1. lists.
+ */
+function markdownToHtml(text) {
+    if (!text) return '';
+
+    // 1. Escape HTML entities trước (an toàn XSS)
+    let html = text
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;');
+
+    // 2. Code block  (```...```)
+    html = html.replace(/```[\w]*\n?([\s\S]*?)```/g, (_, code) =>
+        `<pre style="background:#1e1e2e;color:#cdd6f4;border-radius:8px;padding:12px 14px;` +
+        `overflow-x:auto;font-size:12px;line-height:1.65;margin:8px 0;` +
+        `font-family:Consolas,'Courier New',monospace;white-space:pre-wrap">${code.trim()}</pre>`
+    );
+
+    // 3. Inline code  (`...`)
+    html = html.replace(/`([^`\n]+)`/g,
+        `<code style="background:#f1f0ff;color:#7c3aed;padding:2px 6px;` +
+        `border-radius:4px;font-size:12.5px;font-family:monospace">$1</code>`
+    );
+
+    // 4. Bold  (**text**)
+    html = html.replace(/\*\*([^*\n]+)\*\*/g, '<strong>$1</strong>');
+
+    // 5. Italic  (*text*)  – không đụng đến dấu * đứng đầu dòng (bullet)
+    html = html.replace(/(?<!\*)\*([^*\n]+)\*(?!\*)/g, '<em>$1</em>');
+
+    // 6. Blockquote  (> text)  – &gt; vì đã escape
+    html = html.replace(/^&gt; (.+)$/gm,
+        `<div style="border-left:3px solid #7c3aed;padding:4px 10px;margin:4px 0;` +
+        `color:#555;background:#f9f8ff;border-radius:0 6px 6px 0">$1</div>`
+    );
+
+    // 7. Headings
+    html = html
+        .replace(/^### (.+)$/gm,
+            `<div style="font-size:13px;font-weight:700;color:#18181b;margin:10px 0 3px">$1</div>`)
+        .replace(/^## (.+)$/gm,
+            `<div style="font-size:14px;font-weight:700;color:#18181b;margin:10px 0 4px">$1</div>`)
+        .replace(/^# (.+)$/gm,
+            `<div style="font-size:15px;font-weight:700;color:#18181b;margin:10px 0 5px">$1</div>`);
+
+    // 8. Bullet list  (•  /  -  /  *)
+    html = html.replace(/^[•\-\*] (.+)$/gm,
+        `<div style="display:flex;gap:6px;margin:3px 0;padding-left:4px">` +
+        `<span style="color:#7c3aed;font-size:16px;line-height:1.3;flex-shrink:0;margin-top:-1px">•</span>` +
+        `<span>$1</span></div>`
+    );
+
+    // 9. Numbered list  (1. ...)
+    html = html.replace(/^(\d+)\. (.+)$/gm,
+        `<div style="display:flex;gap:8px;margin:3px 0;padding-left:4px">` +
+        `<span style="color:#7c3aed;font-weight:700;min-width:18px;flex-shrink:0">$1.</span>` +
+        `<span>$2</span></div>`
+    );
+
+    // 10. Xuống dòng
+    html = html
+        .replace(/\n\n/g, `<div style="height:8px"></div>`)
+        .replace(/\n/g, '<br>');
+
+    return html;
+}
+
+/* ─── TYPING DOTS ────────────────────────────────────────────────────────── */
+
 function TypingDots() {
     return (
         <div style={{ display: 'flex', gap: 4, alignItems: 'center', padding: '2px 0' }}>
@@ -28,38 +111,73 @@ function TypingDots() {
     );
 }
 
-/*  Message bubble  */
-function Bubble({ msg }) {
+/* ─── MESSAGE BUBBLE ─────────────────────────────────────────────────────── */
+
+/**
+ * Bubble hiển thị tin nhắn.
+ * – User: bubble tím đơn giản.
+ * – AI:   render Markdown + bắt ActionTrigger → nút điều hướng.
+ *
+ * onNavigate(target, id) — được truyền từ ChatPanel.
+ */
+function Bubble({ msg, onNavigate }) {
     const isUser = msg.role === 'user';
-    return (
-        <div style={{ display: 'flex', justifyContent: isUser ? 'flex-end' : 'flex-start', marginBottom: 14 }}>
-            {!isUser && (
+
+    /* ── User bubble ── */
+    if (isUser) {
+        return (
+            <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 14 }}>
                 <div style={{
-                    width: 30, height: 30, borderRadius: '50%',
-                    background: 'linear-gradient(135deg,#7c3aed,#2dd4bf)',
-                    display: 'flex', alignItems: 'center', justifyContent: 'center',
-                    color: '#fff', fontSize: 12, flexShrink: 0, marginRight: 10, marginTop: 2,
-                    boxShadow: '0 2px 8px rgba(124,58,237,0.2)'
-                }}>✦</div>
-            )}
+                    maxWidth: '82%',
+                    background: 'linear-gradient(135deg,#7c3aed,#5b21b6)',
+                    color: '#fff',
+                    borderRadius: '18px 18px 4px 18px',
+                    padding: '10px 15px', fontSize: 14, lineHeight: 1.6,
+                    whiteSpace: 'pre-wrap', wordBreak: 'break-word',
+                    boxShadow: '0 4px 12px rgba(124,58,237,0.15)',
+                }}>
+                    {msg.message}
+                </div>
+            </div>
+        );
+    }
+
+    const { text, actions } = parseAIMessage(msg.message || '');
+
+    return (
+        <div style={{ display: 'flex', justifyContent: 'flex-start', marginBottom: 14 }}>
             <div style={{
-                maxWidth: '82%',
-                background: isUser ? 'linear-gradient(135deg,#7c3aed,#5b21b6)' : '#fff',
-                color: isUser ? '#fff' : '#18181b',
-                borderRadius: isUser ? '18px 18px 4px 18px' : '18px 18px 18px 4px',
-                padding: '10px 15px', fontSize: 14, lineHeight: 1.6,
-                whiteSpace: 'pre-wrap', wordBreak: 'break-word',
-                boxShadow: isUser ? '0 4px 12px rgba(124,58,237,0.15)' : '0 2px 8px rgba(0,0,0,0.04)',
-                border: isUser ? 'none' : '1px solid #f1f1f1'
-            }}>
-                {msg.message}
+                width: 30, height: 30, borderRadius: '50%',
+                background: 'linear-gradient(135deg,#7c3aed,#2dd4bf)',
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                color: '#fff', fontSize: 12, flexShrink: 0, marginRight: 10, marginTop: 2,
+                boxShadow: '0 2px 8px rgba(124,58,237,0.2)',
+            }}>✦</div>
+
+            <div style={{ maxWidth: '82%', display: 'flex', flexDirection: 'column', gap: 0 }}>
+                {text ? (
+                    <div
+                        style={{
+                            background: '#fff', color: '#18181b',
+                            borderRadius: '18px 18px 18px 4px',
+                            padding: '10px 15px', fontSize: 14, lineHeight: 1.6,
+                            wordBreak: 'break-word',
+                            boxShadow: '0 2px 8px rgba(0,0,0,0.04)',
+                            border: '1px solid #f1f1f1',
+                        }}
+                        dangerouslySetInnerHTML={{ __html: markdownToHtml(text) }}
+                    />
+                ) : null}
+                <ActionButtons actions={actions} onAction={onNavigate} />
             </div>
         </div>
     );
 }
 
-/*  Chat Panel (side panel cố định bên phải)  */
+/* ─── CHAT PANEL ─────────────────────────────────────────────────────────── */
+
 function ChatPanel({ onClose, username }) {
+    const navigate = useNavigate();
     const [messages, setMessages] = useState([]);
     const [input, setInput] = useState('');
     const [loading, setLoading] = useState(false);
@@ -124,13 +242,44 @@ function ChatPanel({ onClose, username }) {
         setMessages([]); setSessionId(''); setPhase('welcome'); setInput('');
     };
 
+    const addBookToCart = async (bookId) => {
+        try {
+            const book = await fetch(`/dem_login-0.0.1-SNAPSHOT/api/books/${bookId}`).then(r => r.json());
+            if (!book?.id) return false;
+            const cart = getCart();
+            const existing = cart.find(i => i.id === book.id);
+            let newCart;
+            if (existing) {
+                newCart = cart.map(i =>
+                    i.id === book.id ? { ...i, quantity: Math.min(i.quantity + 1, book.quantity || 99) } : i
+                );
+            } else {
+                newCart = [...cart, {
+                    id: book.id,
+                    title: book.title,
+                    author: book.author,
+                    price: Number(book.price),
+                    quantity: 1,
+                    imageUrl: book.imageUrl,
+                    maxStock: book.quantity,
+                }];
+            }
+            saveCart(newCart);
+            return true;
+        } catch {
+            return false;
+        }
+    };
+
+    const handleNavigate = (action) =>
+        runChatAction(action, { navigate, addBookToCart });
+
     const rHover = (e, on) => {
         e.currentTarget.style.background = on ? '#f5f3ff' : '#fff';
         e.currentTarget.style.borderColor = on ? '#c4b5fd' : '#efefef';
     };
 
     return (
-        /* ── side panel: fixed, bên phải, full height ── */
         <div style={{
             position: 'fixed', top: 0, right: 0, bottom: 0,
             width: 380,
@@ -148,7 +297,6 @@ function ChatPanel({ onClose, username }) {
 
             {/* ── HEADER ── */}
             <div style={{ padding: '18px 20px 14px', flexShrink: 0, background: '#fff' }}>
-                {/* Top row: badge + icons */}
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
                     <span style={{
                         display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, fontWeight: 700,
@@ -157,7 +305,6 @@ function ChatPanel({ onClose, username }) {
                         <span style={{ fontSize: 12 }}>✦</span> AI Assistant
                     </span>
                     <div style={{ display: 'flex', gap: 2 }}>
-                        {/* new chat */}
                         <button onClick={handleNew} title="Cuộc trò chuyện mới"
                             style={{
                                 background: 'none', border: 'none', cursor: 'pointer', color: '#a1a1aa',
@@ -171,7 +318,6 @@ function ChatPanel({ onClose, username }) {
                                 <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
                             </svg>
                         </button>
-                        {/* close */}
                         <button onClick={onClose} title="Đóng"
                             style={{
                                 background: 'none', border: 'none', cursor: 'pointer', color: '#a1a1aa',
@@ -185,7 +331,6 @@ function ChatPanel({ onClose, username }) {
                     </div>
                 </div>
 
-                {/* Welcome heading */}
                 {phase === 'welcome' && (
                     <div style={{ marginBottom: 14 }}>
                         <h2 style={{ fontSize: 18, fontWeight: 700, color: '#18181b', margin: '0 0 2px' }}>
@@ -206,13 +351,10 @@ function ChatPanel({ onClose, username }) {
                 {/* WELCOME */}
                 {phase === 'welcome' && (
                     <>
-                        {/* Quick actions block */}
                         <p style={{
                             fontSize: 11, fontWeight: 700, textTransform: 'uppercase',
                             letterSpacing: '0.6px', color: '#a1a1aa', margin: '0 0 7px'
-                        }}>
-                            Gợi ý
-                        </p>
+                        }}>Gợi ý</p>
                         {QUICK_ACTIONS_TOP.map((a, i) => (
                             <div key={i} onClick={() => send(a.label)}
                                 style={{
@@ -221,7 +363,6 @@ function ChatPanel({ onClose, username }) {
                                     marginBottom: 5, cursor: 'pointer', transition: 'all .15s'
                                 }}
                                 onMouseEnter={e => rHover(e, true)} onMouseLeave={e => rHover(e, false)}>
-                                {/* envelope */}
                                 <div style={{
                                     width: 30, height: 30, borderRadius: 7, background: '#f4f4f5',
                                     display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0
@@ -238,13 +379,10 @@ function ChatPanel({ onClose, username }) {
                             </div>
                         ))}
 
-                        {/* Commonly asked questions */}
                         <p style={{
                             fontSize: 11, fontWeight: 700, textTransform: 'uppercase',
                             letterSpacing: '0.6px', color: '#a1a1aa', margin: '14px 0 7px'
-                        }}>
-                            Câu hỏi thường gặp
-                        </p>
+                        }}>Câu hỏi thường gặp</p>
                         {FAQ.map((s, i) => (
                             <div key={i} onClick={() => send(s)}
                                 style={{
@@ -253,7 +391,6 @@ function ChatPanel({ onClose, username }) {
                                     marginBottom: 5, cursor: 'pointer', fontSize: 12, color: '#3f3f46', transition: 'all .15s'
                                 }}
                                 onMouseEnter={e => rHover(e, true)} onMouseLeave={e => rHover(e, false)}>
-                                {/* circle-question */}
                                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#a1a1aa" strokeWidth="2" style={{ flexShrink: 0 }}>
                                     <circle cx="12" cy="12" r="10" />
                                     <path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3" />
@@ -268,7 +405,9 @@ function ChatPanel({ onClose, username }) {
                 {/* CHAT */}
                 {phase === 'chat' && (
                     <>
-                        {messages.map((m, i) => <Bubble key={i} msg={m} />)}
+                        {messages.map((m, i) => (
+                            <Bubble key={i} msg={m} onNavigate={handleNavigate} />
+                        ))}
 
                         {loading && (
                             <div style={{ display: 'flex', marginBottom: 10 }}>
@@ -284,15 +423,12 @@ function ChatPanel({ onClose, username }) {
                             </div>
                         )}
 
-                        {/* Suggestions */}
                         {!loading && messages.length > 0 && messages[messages.length - 1].role === 'model' && (
                             <div style={{ marginTop: 10 }}>
                                 <p style={{
                                     fontSize: 11, fontWeight: 700, textTransform: 'uppercase',
                                     letterSpacing: '0.6px', color: '#a1a1aa', margin: '0 0 6px'
-                                }}>
-                                    Đề xuất
-                                </p>
+                                }}>Đề xuất</p>
                                 {FAQ.map((s, i) => (
                                     <div key={i} onClick={() => send(s)}
                                         style={{
@@ -363,12 +499,12 @@ function ChatPanel({ onClose, username }) {
     );
 }
 
-/* Main export: nút mở + panel */
+/* ─── MAIN EXPORT ────────────────────────────────────────────────────────── */
+
 export default function ChatWidget() {
     const { user: me } = useAuth();
     const [open, setOpen] = useState(false);
 
-    // Đẩy nội dung trang sang trái khi panel mở
     useEffect(() => {
         const main = document.querySelector('.main-content');
         if (main) {
@@ -390,7 +526,6 @@ export default function ChatWidget() {
                 />
             )}
 
-            {/* Nút mở/đóng — góc trên phải nằm trong topbar */}
             {!open && (
                 <button onClick={() => setOpen(true)}
                     style={{

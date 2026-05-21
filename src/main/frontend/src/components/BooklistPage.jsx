@@ -22,13 +22,13 @@ function BookFormModal({ book, onClose, onSaved }) {
     const [error, setError] = useState('');
 
     const [imageFile, setImageFile] = useState(null);
-    const [pdfFile,   setPdfFile]   = useState(null);
+    const [pdfFile, setPdfFile] = useState(null);
     const [uploading, setUploading] = useState(false);
 
     const handleUpload = async () => {
         setUploading(true);
         let imageUrl = form.imageUrl;
-        let pdfPath  = form.pdfPath;
+        let pdfPath = form.pdfPath;
 
         if (imageFile) {
             const { ok, data } = await api.uploadImage(imageFile);
@@ -120,8 +120,10 @@ function BookFormModal({ book, onClose, onSaved }) {
                                 onChange={e => setImageFile(e.target.files[0])} />
                             {form.imageUrl && (
                                 <img src={form.imageUrl} alt="preview"
-                                    style={{ width: 80, height: 100,
-                                        objectFit: 'cover', marginTop: 8, borderRadius: 6 }} />
+                                    style={{
+                                        width: 80, height: 100,
+                                        objectFit: 'cover', marginTop: 8, borderRadius: 6
+                                    }} />
                             )}
                         </div>
                         <div className="field-group">
@@ -247,7 +249,7 @@ export default function BookListPage() {
             {/* SIDEBAR */}
             <aside className={`sidebar ${isSidebarOpen ? '' : 'closed'}`}>
                 <div className="sidebar-brand">
-                    <div className="brand-title">Demo Login</div>
+                    <div className="brand-title">BOOKSTORE</div>
                     <button className="btn-toggle-sidebar" onClick={() => setIsSidebarOpen(false)}>
                         <svg viewBox="0 0 24 24" width="22" height="22" stroke="currentColor" strokeWidth="2" fill="none">
                             <line x1="3" y1="12" x2="21" y2="12" /><line x1="3" y1="6" x2="21" y2="6" /><line x1="3" y1="18" x2="21" y2="18" />

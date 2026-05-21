@@ -14,13 +14,19 @@ import org.springframework.stereotype.Service;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.example.dem_login.dto.Dto;
+import com.example.dem_login.model.CustomerAccount;
 import com.example.dem_login.model.CustomerProfile;
 import com.example.dem_login.model.User;
+import com.example.dem_login.repository.CustomerAccountRepository;
 import com.example.dem_login.repository.CustomerProfileRepository;
 import com.example.dem_login.repository.UserJpaRepository;
 
 @Service
 public class GoogleAuthService {
+
+    // Inject repository CustomerAccount để thao tác DB
+    @Autowired
+    private CustomerAccountRepository customerAccountRepository;
 
     // Inject repository User để thao tác DB
     @Autowired
@@ -72,30 +78,30 @@ public class GoogleAuthService {
                 return new Dto.LoginResponse(false, "Không lấy được email từ Google");
             }
 
-            // Tìm user trong database theo email
-            Optional<User> existingUser = userJpaRepository.findByEmail(email);
+            // Tìm customer account trong database theo email
+            Optional<CustomerAccount> existingCust = customerAccountRepository.findByEmail(email);
 
-            User user;
+            CustomerAccount cust;
             boolean isFirstLogin = false; // kiểm tra đăng nhập lần đầu
 
-            // Nếu user đã tồn tại
-            if (existingUser.isPresent()) {
-                user = existingUser.get();// lấy dữ liệu ra
+            // Nếu customer đã tồn tại
+            if (existingCust.isPresent()) {
+                cust = existingCust.get();// lấy dữ liệu ra
 
                 // Nếu tài khoản bị khóa tạm thời
-                if (user.getStatus() == User.UserStatus.Temp_Lock)
+                if (cust.getStatus() == CustomerAccount.AccountStatus.Temp_Lock)
                     return new Dto.LoginResponse(false, "Tài khoản bị khóa tạm thời");
 
                 // Nếu tài khoản đã bị xóa
-                if (user.getStatus() == User.UserStatus.Delete)
+                if (cust.getStatus() == CustomerAccount.AccountStatus.Delete)
                     return new Dto.LoginResponse(false, "Tài khoản đã bị xóa");
 
             } else {
-                // Nếu chưa tồn tại → tạo user mới
+                // Nếu chưa tồn tại → tạo customer account mới
                 isFirstLogin = true;
 
-                user = new User();
-                user.setEmail(email);
+                cust = new CustomerAccount();
+                cust.setEmail(email);
 
                 // Tạo username từ email (phần trước @)
                 String baseUsername = email.split("@")[0].replaceAll("[^a-zA-Z0-9]", "");
@@ -104,34 +110,32 @@ public class GoogleAuthService {
                 int count = 1;
 
                 // Nếu username bị trùng thì thêm số phía sau
-                while (userJpaRepository.existsByUsername(username)) {
+                while (customerAccountRepository.existsByUsername(username) || userJpaRepository.existsByUsername(username)) {
                     username = baseUsername + count++;
                 }
 
-                user.setUsername(username);
+                cust.setUsername(username);
 
                 // Password giả (không dùng để login)
-                user.setPassword("GOOGLE_AUTH_" + googleId);
+                cust.setPassword("GOOGLE_AUTH_" + googleId);
 
-                user.setRole(User.UserRole.USER); // role mặc định
-                user.setStatus(User.UserStatus.ACTIVE); // trạng thái active
-                user.setMustChangePassword(false);
-                user.setCounterLogin(0);
+                cust.setStatus(CustomerAccount.AccountStatus.ACTIVE); // trạng thái active
+                cust.setCounterLogin(0);
 
                 // set thời gian tạo & update
-                user.setCreateDate(LocalDateTime.now());
-                user.setUpdateDate(LocalDateTime.now());
+                cust.setCreateDate(LocalDateTime.now());
+                cust.setUpdateDate(LocalDateTime.now());
 
-                // Lưu user vào DB
-                userJpaRepository.save(user);
+                // Lưu customer vào DB
+                customerAccountRepository.save(cust);
 
                 // Tạo CustomerProfile cho user lần đầu đăng nhập
                 CustomerProfile profile = new CustomerProfile();
 
-                profile.setUsername(user.getUsername());
+                profile.setUsername(cust.getUsername());
 
                 // Nếu có tên từ Google thì dùng, không thì dùng username
-                profile.setCustomerName(googleName != null ? googleName : user.getUsername());
+                profile.setCustomerName(googleName != null ? googleName : cust.getUsername());
 
                 profile.setEmail(email);
 
@@ -141,29 +145,29 @@ public class GoogleAuthService {
                 // Lưu profile
                 profileRepo.save(profile);
 
-                System.out.println("✅ Tạo user mới từ Google: " + email + " / " + googleName);
+                System.out.println("✅ Tạo tài khoản customer mới từ Google: " + email + " / " + googleName);
             }
 
             // Cập nhật thông tin login
-            user.setLastLoginDate(LocalDateTime.now());
-            user.setCounterLogin(0);
-            user.setUpdateDate(LocalDateTime.now());
+            cust.setLastLoginDate(LocalDateTime.now());
+            cust.setCounterLogin(0);
+            cust.setUpdateDate(LocalDateTime.now());
 
-            // Lưu lại user
-            userJpaRepository.save(user);
+            // Lưu lại customer account
+            customerAccountRepository.save(cust);
 
             // Lấy tên hiển thị từ profile
-            String displayName = profileRepo.findByUsername(user.getUsername())
+            String displayName = profileRepo.findByUsername(cust.getUsername())
                     .map(p -> p.getCustomerName()) // lấy tên
                     .filter(n -> n != null && !n.isBlank()) // đảm bảo không null/blank
-                    .orElse(user.getUsername()); // fallback username
+                    .orElse(cust.getUsername()); // fallback username
 
             // Tạo response trả về cho frontend
             Dto.LoginResponse response = new Dto.LoginResponse(
                     true,
                     "Đăng nhập Google thành công",
-                    user.getRole().name(),
-                    user.getUsername(),
+                    "USER",
+                    cust.getUsername(),
                     false);
 
             // Nếu lần đầu login → yêu cầu update profile

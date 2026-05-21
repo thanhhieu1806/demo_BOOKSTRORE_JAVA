@@ -10,5 +10,7 @@ public interface BookRepository extends JpaRepository<Book, Long> {
     // Tìm tất cả các sách có trạng thái ACTIVE
     List<Book> findByStatus(Book.BookStatus status);
 
+    List<Book> findByTitleContainingIgnoreCase(String title);
+
     boolean existsByTitle(String title);
 }

@@ -7,9 +7,11 @@ import java.util.Optional;
 import java.security.SecureRandom;
 import org.springframework.beans.factory.annotation.Autowired;
 import com.example.dem_login.model.User;
+import com.example.dem_login.model.CustomerAccount;
 import com.example.dem_login.model.CustomerProfile;
 import com.example.dem_login.dto.Dto;
 import com.example.dem_login.repository.UserJpaRepository;
+import com.example.dem_login.repository.CustomerAccountRepository;
 import com.example.dem_login.repository.CustomerProfileRepository;
 import org.springframework.beans.factory.annotation.Value;
 import java.util.Collections;
@@ -24,6 +26,9 @@ public class UserService {
 
     @Autowired
     private UserJpaRepository userRepository; // ← JPA thay JSON
+
+    @Autowired
+    private CustomerAccountRepository customerAccountRepository;
 
     @Autowired
     private CustomerProfileRepository profileRepository;
@@ -42,6 +47,48 @@ public class UserService {
 
     // LOGIN
     public Dto.LoginResponse Login(String username, String password) {
+        // 1. Kiểm tra bảng customer_accounts trước
+        Optional<CustomerAccount> custOpt = customerAccountRepository.findByUsername(username);
+        if (custOpt.isPresent()) {
+            CustomerAccount cust = custOpt.get();
+
+            if (cust.getStatus() == CustomerAccount.AccountStatus.Temp_Lock)
+                return new Dto.LoginResponse(false, "Tài khoản đã bị khóa tạm thời.");
+            if (cust.getStatus() == CustomerAccount.AccountStatus.Delete)
+                return new Dto.LoginResponse(false, "Tài khoản không tồn tại.");
+
+            String inputPassword = hashPassword(username + password);
+            if (!cust.getPassword().equals(inputPassword)) {
+                cust.setCounterLogin(cust.getCounterLogin() + 1);
+                cust.setUpdateDate(LocalDateTime.now());
+                if (cust.getCounterLogin() >= maxLoginFail) {
+                    cust.setStatus(CustomerAccount.AccountStatus.Temp_Lock);
+                    customerAccountRepository.save(cust);
+                    return new Dto.LoginResponse(false, "Sai mật khẩu quá " + maxLoginFail + " lần. Tài khoản bị khóa!");
+                }
+                customerAccountRepository.save(cust);
+                int remaining = maxLoginFail - cust.getCounterLogin();
+                return new Dto.LoginResponse(false, "Sai mật khẩu! Còn " + remaining + " lần thử.");
+            }
+
+            cust.setCounterLogin(0);
+            cust.setLastLoginDate(LocalDateTime.now());
+            cust.setUpdateDate(LocalDateTime.now());
+            customerAccountRepository.save(cust);
+
+            Dto.LoginResponse response = new Dto.LoginResponse(true, "Đăng nhập thành công", "USER",
+                    cust.getUsername(), false);
+
+            // Lấy tên hiển thị từ CustomerProfile nếu có
+            profileRepository.findByUsername(cust.getUsername())
+                    .map(CustomerProfile::getCustomerName)
+                    .filter(name -> name != null && !name.isBlank())
+                    .ifPresent(response::setDisplayName);
+
+            return response;
+        }
+
+        // 2. Fallback sang bảng users (admin/staff)
         Optional<User> opt = userRepository.findByUsername(username);
         if (opt.isEmpty())
             return new Dto.LoginResponse(false, "Username không tồn tại");
@@ -96,25 +143,23 @@ public class UserService {
             return Map.of("success", "false", "message", "Mật khẩu phải có ít nhất 6 ký tự!");
         if (req.getPhone() == null || req.getPhone().isBlank())
             return Map.of("success", "false", "message", "Số điện thoại không được trống!");
-        if (userRepository.existsByUsername(req.getUsername()))
+        if (customerAccountRepository.existsByUsername(req.getUsername()) || userRepository.existsByUsername(req.getUsername()))
             return Map.of("success", "false", "message", "Username đã tồn tại!");
-        if (userRepository.existsByEmail(req.getEmail()))
+        if (customerAccountRepository.existsByEmail(req.getEmail()) || userRepository.existsByEmail(req.getEmail()))
             return Map.of("success", "false", "message", "Email đã được sử dụng!");
 
-        // Tạo user mới → lưu vào SQL Server
-        User user = new User();
-        user.setUsername(req.getUsername());
-        user.setEmail(req.getEmail());
-        user.setPhone(req.getPhone());
-        user.setAddress(req.getAddress() != null ? req.getAddress() : "");
-        user.setPassword(hashPassword(req.getUsername() + req.getPassword()));
-        user.setRole(User.UserRole.USER);
-        user.setStatus(User.UserStatus.ACTIVE);
-        user.setMustChangePassword(false);
-        user.setCounterLogin(0);
-        user.setCreateDate(LocalDateTime.now());
-        user.setUpdateDate(LocalDateTime.now());
-        userRepository.save(user); // ← lưu vào SQL Server
+        // Tạo CustomerAccount mới → lưu vào SQL Server
+        CustomerAccount cust = new CustomerAccount();
+        cust.setUsername(req.getUsername());
+        cust.setEmail(req.getEmail());
+        cust.setPhone(req.getPhone());
+        cust.setAddress(req.getAddress() != null ? req.getAddress() : "");
+        cust.setPassword(hashPassword(req.getUsername() + req.getPassword()));
+        cust.setStatus(CustomerAccount.AccountStatus.ACTIVE);
+        cust.setCounterLogin(0);
+        cust.setCreateDate(LocalDateTime.now());
+        cust.setUpdateDate(LocalDateTime.now());
+        customerAccountRepository.save(cust); // ← lưu vào SQL Server
 
         // Lưu thông tin giao hàng vào customer_profiles
         CustomerProfile profile = new CustomerProfile();
@@ -235,6 +280,30 @@ public class UserService {
 
     // UPDATE PROFILE ─
     public Map<String, String> updateProfile(Dto.UpdateProfileRequest req) {
+        // Kiểm tra bảng customer_accounts trước
+        Optional<CustomerAccount> custOpt = customerAccountRepository.findByUsername(req.getUsername());
+        if (custOpt.isPresent()) {
+            CustomerAccount cust = custOpt.get();
+            if (req.getEmail() != null && !req.getEmail().isBlank())
+                cust.setEmail(req.getEmail());
+
+            if (req.getNewPassword() != null && !req.getNewPassword().isBlank()) {
+                if (req.getCurrentPassword() == null || req.getCurrentPassword().isBlank())
+                    return Map.of("success", "false", "message", "Vui lòng nhập mật khẩu hiện tại");
+                String hashedCurrent = hashPassword(cust.getUsername() + req.getCurrentPassword());
+                if (!cust.getPassword().equals(hashedCurrent))
+                    return Map.of("success", "false", "message", "Mật khẩu hiện tại không đúng");
+                if (req.getNewPassword().length() < 6)
+                    return Map.of("success", "false", "message", "Mật khẩu mới phải có ít nhất 6 ký tự");
+                cust.setPassword(hashPassword(cust.getUsername() + req.getNewPassword()));
+            }
+
+            cust.setUpdateDate(LocalDateTime.now());
+            customerAccountRepository.save(cust);
+            return Map.of("success", "true", "message", "Cập nhật thành công!");
+        }
+
+        // Fallback sang bảng users (admin/staff)
         Optional<User> opt = userRepository.findByUsername(req.getUsername());
         if (opt.isEmpty())
             return Map.of("success", "false", "message", "Không tìm thấy user");
@@ -262,8 +331,13 @@ public class UserService {
     // FORCE CHANGE PASSWORD
     public Map<String, String> forceChangePassword(Dto.ForceChangePasswordRequest req) {
         Optional<User> opt = userRepository.findByUsername(req.getUsername());
-        if (opt.isEmpty())
-            return Map.of("success", "false", "message", "Không tìm thấy user");
+        if (opt.isEmpty()) {
+            Optional<CustomerAccount> custOpt = customerAccountRepository.findByUsername(req.getUsername());
+            if (custOpt.isEmpty()) {
+                return Map.of("success", "false", "message", "Không tìm thấy user");
+            }
+            return Map.of("success", "false", "message", "Tài khoản không cần đổi mật khẩu");
+        }
 
         User user = opt.get();
         if (!user.isMustChangePassword())
@@ -287,6 +361,7 @@ public class UserService {
     // RESET DATABASE ─
     public Map<String, String> resetDatabase() {
         userRepository.deleteAll();
+        customerAccountRepository.deleteAll();
         seedDefaultUsers();
         return Map.of("success", "true", "message", "Reset database thành công!");
     }
@@ -367,6 +442,10 @@ public class UserService {
 
     // GET CART DATA
     public String getCartData(String username) {
+        Optional<CustomerAccount> custOpt = customerAccountRepository.findByUsername(username);
+        if (custOpt.isPresent()) {
+            return custOpt.get().getCartData();
+        }
         Optional<User> opt = userRepository.findByUsername(username);
         if (opt.isEmpty())
             return "[]";
@@ -375,6 +454,14 @@ public class UserService {
 
     // SYNC CART DATA
     public Map<String, String> syncCartData(Dto.SyncCartRequest req) {
+        Optional<CustomerAccount> custOpt = customerAccountRepository.findByUsername(req.getUsername());
+        if (custOpt.isPresent()) {
+            CustomerAccount cust = custOpt.get();
+            cust.setCartData(req.getCartData());
+            customerAccountRepository.save(cust);
+            return Map.of("success", "true", "message", "Đồng bộ giỏ hàng thành công!");
+        }
+
         Optional<User> opt = userRepository.findByUsername(req.getUsername());
         if (opt.isEmpty())
             return Map.of("success", "false", "message", "User không tồn tại");

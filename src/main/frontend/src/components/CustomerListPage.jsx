@@ -8,16 +8,16 @@ import ConfirmDialog from './ConfirmDialog';
 export default function CustomerListPage() {
     const { user: me, logout } = useAuth();
     const navigate = useNavigate();
-    const isAdmin  = me?.role === 'ADMIN';
+    const isAdmin = me?.role === 'ADMIN';
     const isReport = me?.role === 'REPORT';
 
-    const [customers, setCustomers]       = useState([]);
-    const [loading, setLoading]           = useState(true);
-    const [search, setSearch]             = useState('');
-    const [showForm, setShowForm]         = useState(false);
-    const [editTarget, setEditTarget]     = useState(null);
+    const [customers, setCustomers] = useState([]);
+    const [loading, setLoading] = useState(true);
+    const [search, setSearch] = useState('');
+    const [showForm, setShowForm] = useState(false);
+    const [editTarget, setEditTarget] = useState(null);
     const [deleteTarget, setDeleteTarget] = useState(null);
-    const [toast, setToast]               = useState('');
+    const [toast, setToast] = useState('');
     const [isSidebarOpen, setIsSidebarOpen] = useState(true);
 
     const load = async () => {
@@ -64,7 +64,7 @@ export default function CustomerListPage() {
             {/* SIDEBAR */}
             <aside className={`sidebar ${isSidebarOpen ? '' : 'closed'}`}>
                 <div className="sidebar-brand">
-                    <div className="brand-title">Demo Login</div>
+                    <div className="brand-title">BOOKSTORE</div>
                     <button className="btn-toggle-sidebar" onClick={() => setIsSidebarOpen(false)} title="Đóng Sidebar">
                         <svg viewBox="0 0 24 24" width="22" height="22" stroke="currentColor" strokeWidth="2" fill="none" strokeLinecap="round" strokeLinejoin="round">
                             <line x1="3" y1="12" x2="21" y2="12"></line>

@@ -216,7 +216,7 @@ export default function BookDetailPage() {
             </aside>
 
             {/* MAIN */}
-            <main className="main-content" style={{ background: '#f0f2ff', padding: '28px 32px' }}>
+            <main className="main-content" style={{ background: '#f0f2ff', padding: '28px 32px', overflowY: 'auto' }}>
                 {!isSidebarOpen && (
                     <button className="btn-toggle-sidebar" style={{ marginBottom: 16 }}
                         onClick={() => setIsSidebarOpen(true)}>
@@ -397,9 +397,9 @@ export default function BookDetailPage() {
 
                 {/* Related books */}
                 {books.length > 0 && (
-                    <div>
-                        <h2 style={{ fontSize: 20, fontWeight: 700, marginBottom: 16 }}>
-                            📚 Sách liên quan
+                    <div style={{ marginTop: 40 }}>
+                        <h2 style={{ fontSize: 20, fontWeight: 700, marginBottom: 16, display: 'flex', alignItems: 'center', gap: 8, color: '#2d3748' }}>
+                            <span>📚</span> Sách liên quan
                         </h2>
                         <div style={{
                             display: 'grid',
@@ -410,33 +410,113 @@ export default function BookDetailPage() {
                                     href={`/dem_login-0.0.1-SNAPSHOT/book-detail?id=${b.id}`}
                                     style={{ textDecoration: 'none', color: 'inherit' }}>
                                     <div style={{
-                                        background: '#fff', borderRadius: 14,
-                                        border: '1.5px solid #e5e7eb', overflow: 'hidden',
-                                        transition: 'all .2s', cursor: 'pointer'
+                                        background: '#fff', 
+                                        borderRadius: '12px',
+                                        border: '1px solid #f3f4f6', 
+                                        overflow: 'hidden',
+                                        transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)', 
+                                        cursor: 'pointer',
+                                        position: 'relative',
+                                        boxShadow: '0 4px 12px rgba(0, 0, 0, 0.03)',
+                                        display: 'flex',
+                                        flexDirection: 'column',
+                                        height: '100%'
                                     }}
-                                        onMouseEnter={e => { e.currentTarget.style.borderColor = '#a5b4fc'; e.currentTarget.style.boxShadow = '0 4px 16px rgba(79,70,229,0.12)'; }}
-                                        onMouseLeave={e => { e.currentTarget.style.borderColor = '#e5e7eb'; e.currentTarget.style.boxShadow = 'none'; }}>
-                                        <div style={{
-                                            height: 140, overflow: 'hidden',
-                                            background: 'linear-gradient(135deg,#ede9fe,#ddd6fe)',
-                                            display: 'flex', alignItems: 'center', justifyContent: 'center'
+                                        onMouseEnter={e => { 
+                                            e.currentTarget.style.transform = 'translateY(-6px)'; 
+                                            e.currentTarget.style.borderColor = '#ffefe9'; 
+                                            e.currentTarget.style.boxShadow = '0 12px 24px rgba(238, 77, 45, 0.15)'; 
+                                            const img = e.currentTarget.querySelector('img');
+                                            if (img) img.style.transform = 'scale(1.06)';
+                                        }}
+                                        onMouseLeave={e => { 
+                                            e.currentTarget.style.transform = 'none'; 
+                                            e.currentTarget.style.borderColor = '#f3f4f6'; 
+                                            e.currentTarget.style.boxShadow = '0 4px 12px rgba(0, 0, 0, 0.03)'; 
+                                            const img = e.currentTarget.querySelector('img');
+                                            if (img) img.style.transform = 'none';
                                         }}>
+                                        
+                                        {/* Cover Wrapper */}
+                                        <div style={{
+                                            height: 180, 
+                                            overflow: 'hidden',
+                                            background: 'linear-gradient(135deg, #fdf2f0, #fde8e2)',
+                                            display: 'flex', 
+                                            alignItems: 'center', 
+                                            justifyContent: 'center',
+                                            position: 'relative'
+                                        }}>
+                                            {b.category && (
+                                                <span style={{
+                                                    position: 'absolute',
+                                                    top: 10,
+                                                    left: 10,
+                                                    background: '#ee4d2d',
+                                                    color: '#fff',
+                                                    fontSize: 10,
+                                                    fontWeight: 700,
+                                                    padding: '2px 8px',
+                                                    borderRadius: 4,
+                                                    zIndex: 2,
+                                                    boxShadow: '0 2px 6px rgba(238, 77, 45, 0.2)'
+                                                }}>
+                                                    {b.category}
+                                                </span>
+                                            )}
                                             {b.imageUrl
                                                 ? <img src={b.imageUrl} alt={b.title}
-                                                    style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                                                : <span style={{ fontSize: 40 }}>📖</span>
+                                                    style={{ 
+                                                        width: '100%', 
+                                                        height: '100%', 
+                                                        objectFit: 'cover',
+                                                        transition: 'transform 0.3s ease'
+                                                    }} />
+                                                : <span style={{ fontSize: 50 }}>📖</span>
                                             }
                                         </div>
-                                        <div style={{ padding: '12px 14px' }}>
-                                            <div style={{
-                                                fontSize: 13, fontWeight: 700, marginBottom: 6,
-                                                display: '-webkit-box', WebkitLineClamp: 2,
-                                                WebkitBoxOrient: 'vertical', overflow: 'hidden'
-                                            }}>
-                                                {b.title}
+
+                                        {/* Content Wrapper */}
+                                        <div style={{ padding: '14px', display: 'flex', flexDirection: 'column', flexGrow: 1, justifyContent: 'space-between' }}>
+                                            <div>
+                                                <div style={{
+                                                    fontSize: 14, 
+                                                    fontWeight: 600, 
+                                                    marginBottom: 6,
+                                                    color: '#2d3748',
+                                                    display: '-webkit-box', 
+                                                    WebkitLineClamp: 2,
+                                                    WebkitBoxOrient: 'vertical', 
+                                                    overflow: 'hidden',
+                                                    lineHeight: 1.4
+                                                }}>
+                                                    {b.title}
+                                                </div>
+                                                {b.author && (
+                                                    <div style={{
+                                                        fontSize: 12,
+                                                        color: '#718096',
+                                                        marginBottom: 8,
+                                                        whiteSpace: 'nowrap',
+                                                        overflow: 'hidden',
+                                                        textOverflow: 'ellipsis'
+                                                    }}>
+                                                        Tác giả: {b.author}
+                                                    </div>
+                                                )}
                                             </div>
-                                            <div style={{ fontSize: 15, fontWeight: 800, color: '#4f46e5' }}>
-                                                {fmt(b.price)}
+                                            <div style={{ 
+                                                display: 'flex', 
+                                                alignItems: 'center', 
+                                                justifyContent: 'space-between',
+                                                marginTop: 4
+                                            }}>
+                                                <span style={{ fontSize: 16, fontWeight: 700, color: '#ee4d2d' }}>
+                                                    {fmt(b.price)}
+                                                </span>
+                                                <span style={{ fontSize: 11, color: '#a0aec0' }}>
+                                                    Còn {b.quantity}
+                                                </span>
                                             </div>
                                         </div>
                                     </div>

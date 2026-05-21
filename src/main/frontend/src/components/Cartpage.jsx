@@ -80,8 +80,8 @@ function CheckoutModal({ cart, username, onClose, onSuccess }) {
                 }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
                         <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                            <circle cx="9" cy="21" r="1"/><circle cx="20" cy="21" r="1"/>
-                            <path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6"/>
+                            <circle cx="9" cy="21" r="1" /><circle cx="20" cy="21" r="1" />
+                            <path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6" />
                         </svg>
                         <span style={{ color: '#fff', fontWeight: 700, fontSize: 18 }}>Xác nhận đặt hàng</span>
                     </div>
@@ -90,19 +90,19 @@ function CheckoutModal({ cart, username, onClose, onSuccess }) {
                         width: 32, height: 32, color: '#fff', cursor: 'pointer', fontSize: 18,
                         display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'background 0.2s'
                     }} onMouseEnter={e => e.currentTarget.style.background = 'rgba(255,255,255,0.3)'}
-                       onMouseLeave={e => e.currentTarget.style.background = 'rgba(255,255,255,0.2)'}>✕</button>
+                        onMouseLeave={e => e.currentTarget.style.background = 'rgba(255,255,255,0.2)'}>✕</button>
                 </div>
 
                 <form onSubmit={handleSubmit}>
                     <div style={{ padding: '24px', maxHeight: '75vh', overflowY: 'auto' }}>
-                        
+
                         {/* Section: SẢN PHẨM ĐẶT MUA */}
                         <div style={{
                             background: '#fff8f6', border: '1px solid #fde8e2',
                             borderRadius: 10, padding: '16px 20px', marginBottom: 24
                         }}>
-                            <div style={{ 
-                                fontSize: 13, fontWeight: 700, color: '#ee4d2d', 
+                            <div style={{
+                                fontSize: 13, fontWeight: 700, color: '#ee4d2d',
                                 marginBottom: 14, display: 'flex', alignItems: 'center', gap: 8,
                                 textTransform: 'uppercase', letterSpacing: '0.5px'
                             }}>
@@ -134,9 +134,9 @@ function CheckoutModal({ cart, username, onClose, onSuccess }) {
                         </div>
 
                         {/* Section: Thông tin giao hàng */}
-                        <div style={{ 
-                            fontSize: 14, fontWeight: 700, color: '#333', 
-                            marginBottom: 18, display: 'flex', alignItems: 'center', gap: 8 
+                        <div style={{
+                            fontSize: 14, fontWeight: 700, color: '#333',
+                            marginBottom: 18, display: 'flex', alignItems: 'center', gap: 8
                         }}>
                             <span style={{ color: '#ee4d2d', fontSize: 18 }}>📍</span> Thông tin giao hàng
                         </div>
@@ -151,8 +151,8 @@ function CheckoutModal({ cart, username, onClose, onSuccess }) {
                                     {field.label} <span style={{ color: '#ee4d2d' }}>*</span>
                                 </label>
                                 <div style={{ position: 'relative' }}>
-                                    <span style={{ 
-                                        position: 'absolute', left: 16, top: '50%', 
+                                    <span style={{
+                                        position: 'absolute', left: 16, top: '50%',
                                         transform: 'translateY(-50%)', fontSize: 18,
                                         pointerEvents: 'none', filter: 'grayscale(100%)', opacity: 0.7
                                     }}>{field.icon}</span>
@@ -185,7 +185,7 @@ function CheckoutModal({ cart, username, onClose, onSuccess }) {
                         {error && (
                             <div style={{
                                 background: '#fef2f2', border: '1px solid #fca5a5', borderRadius: 10,
-                                padding: '12px 16px', color: '#dc2626', fontSize: 14, 
+                                padding: '12px 16px', color: '#dc2626', fontSize: 14,
                                 display: 'flex', alignItems: 'center', gap: 10, marginTop: 12
                             }}>
                                 <span style={{ fontSize: 18 }}>⚠️</span> {error}
@@ -200,10 +200,10 @@ function CheckoutModal({ cart, username, onClose, onSuccess }) {
                     }}>
                         <button type="button" onClick={onClose} style={{
                             padding: '12px 28px', border: '1.5px solid #e5e7eb', borderRadius: 8,
-                            background: '#fff', color: '#555', cursor: 'pointer', fontSize: 15, 
+                            background: '#fff', color: '#555', cursor: 'pointer', fontSize: 15,
                             fontWeight: 600, transition: 'all 0.2s'
                         }} onMouseEnter={e => e.currentTarget.style.background = '#f3f4f6'}
-                           onMouseLeave={e => e.currentTarget.style.background = '#fff'}>
+                            onMouseLeave={e => e.currentTarget.style.background = '#fff'}>
                             Hủy
                         </button>
                         <button type="submit" disabled={loading} style={{
@@ -380,7 +380,7 @@ export default function CartPage() {
     const [books, setBooks] = useState([]);
     const [cart, setCart] = useState(getCart());
     const [loadingBooks, setLoadingBooks] = useState(true);
-    const [search, setSearch] = useState('');
+    const [search, setSearch] = useState(location.state?.search || '');
     const [showCheckout, setShowCheckout] = useState(false);
     const [showProfile, setShowProfile] = useState(false);
     const [profileMandatory, setProfileMandatory] = useState(false);
@@ -417,6 +417,16 @@ export default function CartPage() {
         }
     }, [me]);
 
+    useEffect(() => {
+        if (location.state?.search != null) {
+            setSearch(location.state.search);
+            setActiveTab('shop');
+        }
+        if (location.state?.tab) {
+            setActiveTab(location.state.tab);
+        }
+    }, [location.state]);
+
     // Tự động đồng bộ giỏ hàng lên server khi có thay đổi (nếu đã đăng nhập)
     useEffect(() => {
         if (me && !loadingBooks) {
@@ -424,9 +434,9 @@ export default function CartPage() {
                 fetch('/dem_login-0.0.1-SNAPSHOT/api/users/cart/sync', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ 
-                        username: me.username, 
-                        cartData: JSON.stringify(cart) 
+                    body: JSON.stringify({
+                        username: me.username,
+                        cartData: JSON.stringify(cart)
                     })
                 }).catch(e => console.error('Lỗi đồng bộ giỏ hàng:', e));
             }, 1000); // debounce 1s
@@ -514,7 +524,7 @@ export default function CartPage() {
             {/* SIDEBAR */}
             <aside className={`sidebar ${isSidebarOpen ? '' : 'closed'}`}>
                 <div className="sidebar-brand">
-                    <div className="brand-title">Demo Login</div>
+                    <div className="brand-title">BOOKSTORE</div>
                     <button className="btn-toggle-sidebar" onClick={() => setIsSidebarOpen(false)}>
                         <svg viewBox="0 0 24 24" width="22" height="22" stroke="currentColor" strokeWidth="2" fill="none">
                             <line x1="3" y1="12" x2="21" y2="12" /><line x1="3" y1="6" x2="21" y2="6" /><line x1="3" y1="18" x2="21" y2="18" />
