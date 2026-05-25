@@ -181,14 +181,20 @@ function ActionButton({ action, onAction }) {
 /**
  * @param {{ actions: ChatAction[], onAction: (action: ChatAction) => void }} props
  */
-export function ActionButtons({ actions, onAction }) {
+export function ActionButtons({ actions, onAction, hint }) {
     if (!actions?.length) return null;
 
+    const defaultHint = 'Nhấn nút để thực hiện ngay — không cần gõ thêm:';
+    const showHint = hint !== '';
+
     return (
-        <div className="chat-actions">
-            {actions.map((action, i) => (
-                <ActionButton key={i} action={action} onAction={onAction} />
-            ))}
+        <div className="chat-actions-panel">
+            {showHint && <p className="chat-actions-hint">{hint || defaultHint}</p>}
+            <div className="chat-actions">
+                {actions.map((action, i) => (
+                    <ActionButton key={i} action={action} onAction={onAction} />
+                ))}
+            </div>
         </div>
     );
 }

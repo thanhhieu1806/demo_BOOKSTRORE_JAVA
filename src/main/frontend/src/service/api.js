@@ -266,12 +266,23 @@ const api = {
     },
     //hỏi đáp pdf
     askPdf: async (username, question, pdfPath) => {
-        const params = new URLSearchParams({ username, question, pdfPath });
-        const res = await fetch(`${BASE}/chat/ask-pdf?${params}`, {
-            method: 'POST'
+        const params = new URLSearchParams({
+            username: username || 'user',
+            question: question || '',
+            pdfPath: pdfPath || '',
         });
-        return { ok: res.ok, data: await res.json() };
-    }
+        const res = await fetch(`${BASE}/chat/ask-pdf?${params.toString()}`, {
+            method: 'POST',
+            headers: { 'Accept': 'application/json' },
+        });
+        let data = {};
+        try {
+            data = await res.json();
+        } catch {
+            data = { success: false, message: `Hỏi PDF thất bại (HTTP ${res.status})` };
+        }
+        return { ok: res.ok, data };
+    },
 }
 
 export default api;

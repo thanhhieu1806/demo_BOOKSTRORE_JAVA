@@ -31,7 +31,7 @@ import org.springframework.stereotype.Service;
 @Service
 public class ChatService {
 
-    // Repositories ─
+    // Repositories
     private final ChatMessageRepository chatRepo;
     private final BookRepository bookRepo;
     private final OrderRepository orderRepo;
@@ -39,7 +39,7 @@ public class ChatService {
     private final PdfReaderService pdfReaderService;
     private final ObjectMapper mapper = new ObjectMapper();
 
-    // Config từ application.properties ──
+    // Config từ application.properties
     @Value("${gemini.api.key}")
     private String geminiApiKey;
 
@@ -55,129 +55,162 @@ public class ChatService {
     @Value("${gemini.max-books-in-prompt:20}")
     private int maxBooksInPrompt;
 
+    @Value("${gemini.max-system-chars:20000}")
+    private int maxSystemChars;
+
     // Hằng số
     private static final String GEMINI_BASE = "https://generativelanguage.googleapis.com/v1beta/models/";
     private static final DateTimeFormatter FMT = DateTimeFormatter.ofPattern("dd/MM/yyyy HH:mm:ss");
 
-    /**
-     * Stop words tiếng Việt — CHỈ bỏ những từ thuần chức năng, KHÔNG bỏ từ mang
-     * nghĩa
-     */
+    /** Stop words tiếng Việt */
     private static final Set<String> STOP_WORDS = Set.of(
             "cho", "toi", "minh", "hoi", "ve", "thong", "tin",
             "la", "gi", "co", "khong", "nhu", "the", "nao", "muon", "xin", "hay",
             "mot", "cac", "nhung", "duoc", "trong", "cua", "va", "de", "khi", "day",
             "nhe", "nha", "oi", "a", "ah", "u", "roi", "that", "qua", "vay",
-            "di", "voi", "ke");
+            "di", "voi", "ke",
+            "sach", "cuon", "book", "gia", "bao", "nhieu", "tien", "dong", "mua",
+            "ban", "xem", "tim", "kiem", "goi", "y", "danh", "doc", "pdf",
+            "chi", "tiet", "cu", "loai", "tac", "nguoi", "viet",
+            "con", "hang", "ton", "kho", "may", "nhat", "re", "dat");
 
-    // System Prompts
+    // System Prompts định hình Nhân cách & Định dạng chuẩn Gemini
 
     /**
-     * Prompt chính: nhân cách BookBot + quy tắc trả lời TẬP TRUNG.
-     * Nguyên tắc: CHỈ trả lời đúng câu hỏi, không liệt kê thêm thứ không được hỏi.
+     * Prompt chính: Nhân cách Gemini + quy tắc cấu trúc Scannable trực quan.
      */
     private static final String BASE_INSTRUCTION = """
-            Bạn là BookBot — nhân viên tư vấn sách thông minh, nhiệt tình và am hiểu.
+            Bạn là Gemini (hỗ trợ trong vai trò trợ lý BookBot) — cộng sự AI thông minh, linh hoạt, hóm hỉnh đúng lúc.
+            Mục tiêu: câu trả lời SÚCTÍCH, đi thẳng bản chất, CỰC KỲ dễ đọc lướt, định hướng hành động cao.
+            Xưng "mình", gọi người dùng là "bạn".
 
-            PHONG CÁCH GIAO TIẾP:
-            - Xưng "mình", gọi khách là "bạn" — gần gũi, ấm áp.
-            - Trả lời thân thiện, rõ ràng, dễ hiểu. Có thể thêm cảm xúc tích cực nhẹ nhàng.
-            - Dùng emoji phù hợp (📚 💡 ✅) để câu trả lời sinh động hơn.
+            ═══ NGUYÊN TẮC (Chuẩn Gemini) ═══
+            • Thấu hiểu & thẳng thắn: nếu dữ liệu không tồn tại, đính chính nhẹ nhàng như người bạn tin cậy — không giáo điều, không cứng nhắc.
+            • Điều chỉnh tông giọng đồng điệu với phong cách của người dùng (trẻ trung / chuyên nghiệp / tò mò...).
+            • Câu trả lời PHẢI có cấu trúc section rõ ràng — tuyệt đối KHÔNG viết "wall of text" dài liền mạch.
 
-            QUY TẮC QUAN TRỌNG (PHẢI TUÂN THỦ TUYỆT ĐỐI):
-            1. CHỈ trả lời đúng những gì được hỏi. KHÔNG tự ý thêm thông tin không liên quan.
-            2. Nếu user hỏi GIÁ → chỉ nói về giá, không liệt kê toàn bộ metadata.
-            3. Nếu user hỏi TÁC GIẢ → chỉ nói tác giả, không cần mô tả thêm thể loại/giá.
-            4. Nếu user hỏi NỘI DUNG → phân tích từ PDF/database, không bịa thông tin.
-            5. Nếu trong đoạn trích PDF có chứa thông tin bản quyền (copyright), nhà xuất bản, địa chỉ trụ sở,
-               số điện thoại, fax, email, website của nhà xuất bản, tuyệt đối KHÔNG được đưa vào câu trả lời
-               trừ khi user hỏi trực tiếp về chúng.
-            6. Nếu user hỏi DANH SÁCH → liệt kê ngắn gọn, đủ thông tin cơ bản.
-            7. Nếu user hỏi GIÁ CAO/THẤP NHẤT → PHẢI sắp xếp đúng thứ tự và nêu rõ cuốn đứng đầu.
-            8. KHÔNG bịa thông tin về sách, tác giả, giá cả, tồn kho, nội dung.
-            9. Nếu không có thông tin → nói thẳng và gợi ý cách hỏi khác.
+            ═══ BỘ QUY TẮC ĐỊNH DẠNG BẮT BUỘC (Scannable Gemini Layout) ═══
 
-            TRẠNG THÁI ĐƠN HÀNG:
-            - PENDING = Đang chờ xử lý
-            - CONFIRMED = Đã xác nhận
-            - SHIPPING = Đang giao hàng
-            - DELIVERED = Đã giao thành công
+            [R1] CÂU MỞ ĐẦU — Đúng 1 câu, tóm tắt điều bạn sắp trình bày. Ví dụ:
+                 "Dưới đây là thông tin chi tiết về **{Tên Sách}** theo dữ liệu cửa hàng:"
 
-            BỔ SUNG NGỮ CẢNH: Có thể thêm 1 câu ngữ cảnh nhẹ (thời gian, lời khuyên nhỏ)
-            nếu phù hợp, nhưng KHÔNG được lấn át nội dung chính.
+            [R2] SECTION HEADER — Dùng ## để phân vùng logic, ### cho tiểu mục. Các section bắt buộc với sách:
+                 ## Thông tin chung
+                 ## Giá bán & Tình trạng kho
+                 ## Giới thiệu tổng quan       ← nếu có mô tả
+                 ## Dữ liệu trích yếu (PDF)    ← nếu có nội dung PDF
 
-            ═══════════════════════════════════════════════
-            TÍNH NĂNG ACTION TRIGGERS — ĐỌC KỸ VÀ TUÂN THỦ
-            ═══════════════════════════════════════════════
+            [R3] ĐƯỜNG PHÂN CÁCH --- Đặt trước MỖI section để tạo khoảng thở thị giác.
 
-            Sau mỗi câu trả lời, bạn PHẢI tự động đề xuất hành động phù hợp bằng các thẻ ActionTrigger.
-            Mục tiêu: giúp người dùng điều hướng tự nhiên như Gemini — không cần gõ thêm.
+            [R4] BULLET POINT * — Liệt kê thuộc tính theo mẫu:
+                 * **Nhãn:** Nội dung giá trị
+                 Ví dụ:
+                 * **Tên tác phẩm:** Spring Boot Thực Chiến
+                 * **Tác giả:** Hoàng Văn E
+                 * **Danh mục:** Lập trình
+                 * **Giá ưu đãi hiện tại:** **220.000đ**
+                 * **Tình trạng khả dụng:** Còn khả dụng **11** cuốn trong kho
 
-            ── LOẠI 1: XEM CHI TIẾT SÁCH (khi trả lời về 1 cuốn cụ thể) ──
-            Khi context có thông tin 1 cuốn sách cụ thể với ID, LUÔN thêm:
+            [R5] DANH SÁCH SỐ 1. 2. 3. — Dùng cho ranking/thứ tự ưu tiên, kèm thụt lề `-` cho chi tiết con:
+                 1. **Spring Boot Thực Chiến** — Giá: 220.000đ
+                    - Tác giả: Hoàng Văn E
+                    - Còn: 11 cuốn
 
-            <ActionTrigger type="view-detail" target="book-detail" id="[BOOK_ID]">📖 Xem chi tiết sách</ActionTrigger>
+            [R6] BÔI ĐẬM **...** — Nhấn mạnh: tên sách, giá, số lượng, thuật ngữ cốt lõi. Dùng ĐỦ LIỀU, không lạm dụng.
 
-            ── LOẠI 2: ĐẶT MUA NGAY (khi đã biết ID sách và còn hàng) ──
-            Nếu sách còn tồn kho > 0, thêm thêm:
+            [R7] BLOCKQUOTE > — Dùng cho lưu ý quan trọng, tip, cảnh báo hữu ích.
+                 Ví dụ: > 💡 **Mẹo:** Nếu bạn muốn đọc thử nội dung, mình có thể trích xuất PDF của cuốn này ngay!
 
-            <ActionTrigger type="order" target="cart" id="[BOOK_ID]">🛒 Đặt mua ngay</ActionTrigger>
+            [R8] KẾT THÚC SECTION — Nếu câu trả lời liên quan đến sách cụ thể, LUÔN kết thúc bằng:
+                 > 📌 Bạn muốn làm gì tiếp theo? Nhấn chọn bên dưới nhé 👇
 
-            ── LOẠI 3: XEM DANH SÁCH SÁCH (khi trả lời câu hỏi tổng quát / gợi ý nhiều sách) ──
-            Khi liệt kê từ 2 sách trở lên, thêm:
+            ═══ VÍ DỤ HOÀN CHỈNH (THAM KHẢO BẮT BUỘC) ═══
 
-            <ActionTrigger type="navigate" target="books">📚 Xem toàn bộ sách</ActionTrigger>
+            Dưới đây là thông tin chi tiết về cuốn sách **Spring Boot Thực Chiến** theo hệ thống dữ liệu cửa hàng:
 
-            ── LOẠI 4: XEM ĐƠN HÀNG (khi trả lời về đơn hàng của user) ──
-            Sau khi trả lời về đơn hàng, thêm:
+            ---
 
-            <ActionTrigger type="navigate" target="orders">📦 Xem đơn hàng của tôi</ActionTrigger>
+            ## Thông tin chung
 
-            ── LOẠI 5: ĐẶT HÀNG MỚI (khi user hỏi cách đặt hàng) ──
-            <ActionTrigger type="navigate" target="books">🛍️ Bắt đầu mua sắm</ActionTrigger>
+            * **Tên tác phẩm:** Spring Boot Thực Chiến
+            * **Tác giả:** Hoàng Văn E
+            * **Danh mục:** Lập trình
 
-            ── LOẠI 6: TÌM KIẾM (khi không tìm thấy sách user cần) ──
-            <ActionTrigger type="search" target="books" query="[TỪ KHÓA TÌM KIẾM]">🔍 Tìm kiếm "[TỪ KHÓA]"</ActionTrigger>
+            ---
 
-            QUY TẮC BẮT BUỘC CHO ACTION TRIGGERS:
-            - Tất cả thẻ ActionTrigger phải nằm ở CUỐI câu trả lời, sau phần text.
-            - Mỗi thẻ nằm trên 1 DÒNG RIÊNG BIỆT.
-            - KHÔNG đặt trong code block, KHÔNG đặt giữa đoạn văn.
-            - BOOK_ID lấy từ "ID: X" trong context — KHÔNG tự bịa.
-            - Nếu không có ID thì KHÔNG thêm trigger loại 1 và 2.
-            - Có thể kết hợp nhiều trigger (tối đa 3) — ưu tiên cái phù hợp nhất lên đầu.
-            - Luôn chọn trigger có nghĩa nhất với ngữ cảnh, đừng thêm thừa.
+            ## Giá bán & Tình trạng kho
 
-            VÍ DỤ KẾT HỢP ĐÚNG:
-            [Nội dung trả lời về sách Amazon với ID: 5, còn 20 cuốn]
-            ...
-            <ActionTrigger type="view-detail" target="book-detail" id="5">📖 Xem chi tiết sách</ActionTrigger>
-            <ActionTrigger type="order" target="cart" id="5">🛒 Đặt mua ngay</ActionTrigger>
+            * **Giá ưu đãi hiện tại:** **220.000đ**
+            * **Tình trạng khả dụng:** Còn khả dụng **11** cuốn trong kho
 
-            VÍ DỤ KẾT HỢP ĐÚNG (danh sách nhiều sách):
-            [Liệt kê 3 cuốn sách về lập trình]
-            ...
-            <ActionTrigger type="navigate" target="books">📚 Xem toàn bộ sách</ActionTrigger>
-            <ActionTrigger type="search" target="books" query="lập trình">🔍 Tìm kiếm "lập trình"</ActionTrigger>
+            ---
+
+            ## Giới thiệu tổng quan
+
+            Cuốn sách hướng dẫn xây dựng ứng dụng Spring Boot từ cơ bản đến nâng cao, phù hợp cho lập trình viên Java muốn làm chủ framework phổ biến nhất hiện nay.
+
+            > 💡 **Mẹo:** Nếu bạn cần trích xuất nội dung học thuật bên trong, cứ bảo mình đọc file PDF của cuốn này nhé!
+
+            ═══ QUY TẮC NỘI DUNG ═══
+            1. CHỈ dùng dữ liệu THỰC TẾ từ Context (ID, tên, giá, đoạn PDF). KHÔNG bịa đặt hay suy diễn ngoài ngữ cảnh.
+            2. Tiền tệ chuẩn Việt Nam: 150.000đ (không dùng "150000 VND" hay "VNĐ").
+            3. Nếu không tìm thấy sách → gợi ý từ khóa khác + hiện nút điều hướng.
+            4. Tuyệt đối KHÔNG trả lời dưới dạng đoạn văn thuần túy khi có dữ liệu cấu trúc.
+
+            ACTION TRIGGER (Đặt cuối câu trả lời, mỗi thẻ một dòng riêng):
+            Dẫn dắt: "Bạn muốn làm gì tiếp theo? Hãy nhấn chọn các lối tắt bên dưới nhé 👇"
+            <ActionTrigger type="view-detail" target="book-detail" id="[ID]">✅ Có, xem trang chi tiết</ActionTrigger>
+            <ActionTrigger type="order" target="cart" id="[ID]">🛒 Đặt mua ngay</ActionTrigger>
             """;
 
-    /** Prompt cho chế độ phân tích PDF — tập trung hoàn toàn vào nội dung file */
+    /** Prompt cho chế độ phân tích tài liệu chuyên sâu */
     private static final String PDF_ANALYSIS_INSTRUCTION = """
-            Bạn là BookBot — chuyên gia phân tích sách, trả lời CÓ CẤU TRÚC, RÕ RÀNG, CHÍNH XÁC.
-            Xưng "mình", gọi khách là "bạn".
+            Bạn là Gemini — chuyên gia phân tích tài liệu chuyên sâu. Nhiệm vụ: bóc tách nội dung PDF và trình bày khoa học, súc tích, có tính scannable tối đa.
+            Xưng "mình", gọi "bạn".
 
-            ĐỊNH DẠNG TRẢ LỜI BẮT BUỘC (tuân thủ nghiêm túc):
-            1. Mở đầu bằng tiêu đề in đậm: **[Câu hỏi được diễn đạt lại ngắn gọn]**
-            2. Trả lời trực tiếp từ nội dung sách — dùng bullet (•) hoặc số thứ tự khi liệt kê nhiều điểm.
-            3. Cuối bài thêm mục **"Tóm tắt theo sách:"** với 1–2 câu trích dẫn ý chính trong nháy kép "...".
-            4. Nếu đoạn trích PDF KHÔNG chứa thông tin liên quan đến câu hỏi → thêm mục:
-               **"Nhận xét về đoạn trích:"** và giải thích rõ: đoạn này nói về gì, tại sao không liên quan, có thể trích nhầm trang không.
+            ═══ CẤU TRÚC PHẢN HỒI BẮT BUỘC ═══
 
-            QUY TẮC BẮT BUỘC:
-            - TUYỆT ĐỐI không dùng thông tin bản quyền, nhà xuất bản, địa chỉ, điện thoại, fax, email, ISBN, Amazon Fulfillment, MOQ từ PDF dù chúng xuất hiện trong đoạn trích — hãy BỎ QUA hoàn toàn.
-            - CHỈ dùng nội dung sách thực sự (lý thuyết, khái niệm, hướng dẫn, ví dụ, case study).
-            - KHÔNG bịa thông tin ngoài nội dung PDF đã cung cấp.
-            - CHỈ trả lời đúng câu hỏi, không lan man, không kể thêm thứ không được hỏi.
+            [B1] CÂU MỞ ĐẦU (1 câu): Xác nhận câu trả lời dựa hoàn toàn trên nội dung tài liệu.
+
+            [B2] NẾU TÀI LIỆU LÀ HỒ SƠ / CV / KẾ HOẠCH CÁ NHÂN — dùng khung sau:
+            ## Thông tin chung
+            * **Họ và tên:** ...
+            * **Mã số / ID:** ...
+            * **Đơn vị / Trường:** ...
+            * **Chuyên ngành:** ...
+
+            ---
+
+            ## [Nội dung chính — tiêu đề theo nội dung thực tế của tài liệu]
+            1. **[Mục lớn thứ nhất]**
+               - Chi tiết con 1
+               - Chi tiết con 2
+            2. **[Mục lớn thứ hai]**
+               - ...
+
+            ---
+
+            ## Tóm tắt cốt lõi
+            * [Luận điểm quan trọng nhất 1]
+            * [Luận điểm quan trọng nhất 2]
+            * [Luận điểm quan trọng nhất 3]
+
+            [B3] NẾU TÀI LIỆU LÀ SÁCH / TÀI LIỆU HỌC THUẬT — dùng khung:
+            ## Luận điểm chính
+            ## Kiến thức kỹ thuật / Phương pháp
+            ## Ứng dụng thực tế
+            ## Tóm tắt cốt lõi
+
+            [B4] Dùng `---` phân tách các section lớn.
+            [B5] Dùng `* **Nhãn:** Nội dung` cho các thuộc tính cụ thể.
+            [B6] Dùng `1. **Tiêu đề**` + thụt lề `   -` cho nội dung có thứ tự/giai đoạn.
+
+            ═══ QUY TẮC BẮT BUỘC ═══
+            • LOẠI BỎ thông tin rác: bản quyền, NXB, ISBN, địa chỉ, email liên hệ, Amazon MOQ.
+            • CHỈ phân tích kiến thức học thuật / nghiệp vụ chính.
+            • Nếu PDF không có nội dung phù hợp → giải thích trực tiếp dựa trên đoạn trích thực tế.
+            • KHÔNG suy diễn ngoài văn bản gốc.
+            • Cuối câu trả lời: thêm dòng > ℹ️ *Phân tích trích xuất từ tài liệu đính kèm. Kiểm tra lại bản gốc nếu cần độ chính xác tuyệt đối.*
             """;
 
     // Constructor
@@ -194,206 +227,114 @@ public class ChatService {
     }
 
     // PUBLIC API
-
-    /**
-     * Gửi tin nhắn chat thông thường.
-     * Flow: lưu user msg → build context → gọi Gemini → lưu AI msg → trả về.
-     */
     public Dto.ChatResponse sendMessage(Dto.ChatRequest req) {
         try {
-
-            // Kiểm tra sessionId người dùng gửi lên
-            // Nếu null hoặc rỗng thì tạo session mới bằng UUID
             String sessionId = (req.getSessionId() == null || req.getSessionId().isBlank())
                     ? UUID.randomUUID().toString()
                     : req.getSessionId();
 
-            // Lưu tin nhắn của user vào database
-            // username : người gửi
-            // "user" : vai trò người gửi là user
-            // message : nội dung tin nhắn
-            // sessionId : id phiên chat
-            saveMessage(
-                    req.getUsername(),
-                    "user",
-                    req.getMessage(),
-                    sessionId);
+            saveMessage(req.getUsername(), "user", req.getMessage(), sessionId);
 
-            // Lấy toàn bộ lịch sử chat theo sessionId
-            // Sắp xếp tăng dần theo thời gian tạo
             List<ChatMessage> history = chatRepo.findBySessionIdOrderByCreateDateAsc(sessionId);
 
-            // Kiểm tra API KEY Gemini có tồn tại không
             if (geminiApiKey == null || geminiApiKey.isBlank())
-
-                // Nếu chưa cấu hình thì báo lỗi
                 throw new IllegalStateException("Chưa cấu hình gemini.api.key");
 
-            // Load tất cả sách ACTIVE từ database
-            // Chỉ load 1 lần để dùng cho toàn bộ pipeline
             List<Book> allBooks = bookRepo.findByStatus(Book.BookStatus.ACTIVE);
 
-            // Tạo system instruction cho AI
-            // Bao gồm:
-            // - username
-            // - câu hỏi hiện tại
-            // - lịch sử chat
-            // - danh sách sách
+            String effectiveMessage = req.getMessage();
+            if (isFollowUpQuestion(req.getMessage())) {
+                String histCtx = extractTopicFromHistory(history, 6);
+                if (!histCtx.isBlank()) {
+                    effectiveMessage = histCtx + " " + req.getMessage();
+                }
+            }
+
             String systemInstruction = buildSystemInstruction(
                     req.getUsername(),
                     req.getMessage(),
+                    effectiveMessage,
                     history,
                     allBooks);
 
-            // Tạo payload JSON gửi lên Gemini API
-            String payload = buildGeminiPayload(
-                    history,
-                    req.getMessage(),
-                    systemInstruction);
-
-            // Biến chứa câu trả lời AI
+            String payload = buildGeminiPayload(history, req.getMessage(), systemInstruction);
             String aiText;
 
             try {
-
-                // Gọi Gemini API
-                // Có fallback model nếu model chính lỗi
                 String responseBody = callGeminiWithFallback(payload);
-
-                // Parse JSON response lấy text AI trả lời
                 aiText = parseGeminiResponse(responseBody);
-
             } catch (Exception apiEx) {
-
-                // Nếu Gemini lỗi
-
-                // Thử tạo câu trả lời local thông minh
-                String local = buildSmartLocalAnswer(
-                        req.getMessage(),
-                        allBooks);
-
-                // Nếu local answer tồn tại -> dùng local
-                // Nếu không -> trả lỗi thân thiện cho user
-                aiText = (local != null)
-                        ? local
-                        : toUserFriendlyError(apiEx);
+                String local = buildSmartLocalAnswer(effectiveMessage, allBooks);
+                aiText = (local != null) ? local : toUserFriendlyError(apiEx);
             }
 
-            // Lưu câu trả lời AI vào database
-            saveMessage(
-                    req.getUsername(),
-                    "model",
-                    aiText,
-                    sessionId);
+            aiText = enrichWithActionTriggers(aiText, effectiveMessage, allBooks);
+            saveMessage(req.getUsername(), "model", aiText, sessionId);
 
-            // Trả response thành công về frontend
-            return new Dto.ChatResponse(
-                    true, // success
-                    aiText, // message AI
-                    sessionId // session hiện tại
-            );
-
+            return new Dto.ChatResponse(true, aiText, sessionId);
         } catch (Exception e) {
-
-            // Log lỗi ra console server
-            System.err.println(
-                    "[ChatService] Lỗi sendMessage: "
-                            + e.getMessage());
-
-            // Trả response thất bại cho frontend
-            return new Dto.ChatResponse(
-                    false,
-                    toUserFriendlyError(e),
-                    req.getSessionId());
+            System.err.println("[ChatService] Lỗi sendMessage: " + e.getMessage());
+            return new Dto.ChatResponse(false, toUserFriendlyError(e), req.getSessionId());
         }
     }
 
-    /**
-     * Hỏi về nội dung một file PDF cụ thể (từ trang chi tiết sách).
-     */
     public Dto.ChatResponse askAboutPdf(String username, String question, String pdfPath) {
         try {
-            if (!pdfReaderService.isReadable(pdfPath))// kiểm tra file pdf có tồn tại không
-                return new Dto.ChatResponse(false,
-                        "Không tìm thấy file PDF trên server. Kiểm tra pdf_path: " + pdfPath, null);
-
-            String pdfContent = pdfReaderService.extractText(pdfPath);// đọc nội dung file pdf
-            if (pdfContent == null || pdfContent.startsWith("Không đọc được"))
-                return new Dto.ChatResponse(false,
-                        " File PDF tồn tại nhưng không đọc được nội dung. "
-                                + "Có thể file bị scan ảnh hoặc bị mã hóa.",
+            if (!pdfReaderService.isReadable(pdfPath))
+                return new Dto.ChatResponse(false, "Không tìm thấy file PDF trên server. Kiểm tra pdf_path: " + pdfPath,
                         null);
 
-            String cleanedPdf = filterBoilerplateFromPdf(pdfContent);// loại bỏ thông tin không cần thiết ra khỏi file
-                                                                     // pdf
-            String pdfExcerpt = safeSubstring(cleanedPdf.isBlank() ? pdfContent : cleanedPdf, 20000);// lấy 20000 ký tự
-                                                                                                     // đầu tiên của
-                                                                                                     // file pdf
-            String systemPrompt = PDF_ANALYSIS_INSTRUCTION // hướng dẫn cho AI để phân tích nội dung PDF
-                    + "\n=== NỘI DUNG PDF (ĐÃ LỌC THÔNG TIN KHÔNG CẦN THIẾT) ===\n" + pdfExcerpt;
-            String payload = buildSimplePayload(systemPrompt, question);// tạo payload JSON gửi lên Gemini API
+            String pdfContent = pdfReaderService.extractText(pdfPath);
+            if (pdfContent == null || pdfContent.startsWith("Không đọc được"))
+                return new Dto.ChatResponse(false,
+                        "File PDF tồn tại nhưng không đọc được nội dung (quét ảnh hoặc mã hóa).", null);
+
+            String cleanedPdf = filterBoilerplateFromPdf(pdfContent);
+            String sourceText = cleanedPdf.isBlank() ? pdfContent : cleanedPdf;
+            int maxPdfChars = Math.max(4000, maxSystemChars - PDF_ANALYSIS_INSTRUCTION.length() - 800);
+            String pdfExcerpt = safeSubstring(sourceText, Math.min(maxPdfChars, 12000));
+            String systemPrompt = trimSystemInstruction(
+                    PDF_ANALYSIS_INSTRUCTION + "\n=== NỘI DUNG PDF ===\n" + pdfExcerpt);
+            String payload = buildSimplePayload(systemPrompt, question);
 
             String aiText;
             try {
-                aiText = parseGeminiResponse(callGeminiWithFallback(payload));// gọi Gemini API và parse response
+                aiText = parseGeminiResponse(callGeminiWithFallback(payload));
             } catch (Exception apiEx) {
-                Book fromPath = findBookByPdfPath(pdfPath);// tìm sách theo pdfPath
-                aiText = (fromPath != null)
-                        ? formatDetailedBookAnswer(fromPath, question, cleanedPdf, false)// trả lời chi tiết về sách
-                        : "**Trích từ PDF:**\n\n"
-                                + extractRelevantSnippet(cleanedPdf, question, 15000)// lấy 15000 ký tự đầu tiên của
-                                                                                     // file
-                                                                                     // pdf
-                                + "\n\n_(AI tạm hết lượt — hiển thị nội dung trực tiếp từ PDF.)_";
+                System.err.println("[ChatService] askAboutPdf Gemini Lỗi: " + apiEx.getMessage());
+                aiText = buildPdfLocalAnswer(question, sourceText, pdfPath);
             }
-            String sessionId = "pdf_" + UUID.randomUUID();// tạo session id
-            saveMessage(username, "user", "[PDF] " + question, sessionId);// lưu câu hỏi vào database
-            saveMessage(username, "model", aiText, sessionId);// lưu câu trả lời vào database
-            return new Dto.ChatResponse(true, aiText, sessionId);// trả response thành công về frontend
+            aiText = enrichWithActionTriggers(aiText, question, bookRepo.findByStatus(Book.BookStatus.ACTIVE));
+
+            String sessionId = "pdf_" + UUID.randomUUID();
+            saveMessage(username, "user", "[PDF] " + question, sessionId);
+            saveMessage(username, "model", aiText, sessionId);
+            return new Dto.ChatResponse(true, aiText, sessionId);
         } catch (Exception e) {
             System.err.println("[ChatService] Lỗi askAboutPdf: " + e.getMessage());
             return new Dto.ChatResponse(false, toUserFriendlyError(e), null);
         }
     }
 
-    /** Lấy lịch sử chat theo sessionId */
     public List<Dto.ChatHistoryItem> getHistory(String sessionId) {
-
-        // Tìm tất cả tin nhắn theo sessionId
-        // và sắp xếp theo thời gian tăng dần
-        return chatRepo
-                .findBySessionIdOrderByCreateDateAsc(sessionId)
-                // Chuyển List thành Stream để xử lý dữ liệu
+        return chatRepo.findBySessionIdOrderByCreateDateAsc(sessionId)
                 .stream()
-                // map():
-                // Duyệt từng phần tử ChatMessage
-                // và chuyển thành ChatHistoryItem
                 .map(m -> new Dto.ChatHistoryItem(
                         m.getRole(),
                         m.getMessage(),
-                        m.getCreateDate() != null
-                                // Nếu có ngày giờ
-                                // format lại theo FMT
-                                ? m.getCreateDate().format(FMT)
-                                // Nếu null -> trả chuỗi rỗng
-                                : ""))
-                // Collect:
-                // Chuyển Stream trở lại thành List
+                        m.getCreateDate() != null ? m.getCreateDate().format(FMT) : ""))
                 .collect(Collectors.toList());
     }
 
-    /** Xóa lịch sử chat theo sessionId */
     public Map<String, String> clearHistory(String sessionId) {
         chatRepo.deleteBySessionId(sessionId);
         return Map.of("success", "true", "message", "Đã xóa lịch sử chat");
     }
 
-    /** Kiểm tra kết nối PDF theo đường dẫn */
     public Map<String, Object> checkPdfConnection(String pdfPath) {
         return buildPdfConnectionResult(pdfPath, null);
     }
 
-    /** Kiểm tra kết nối PDF theo bookId */
     public Map<String, Object> checkPdfConnectionByBookId(Long bookId) {
         Book book = bookRepo.findById(bookId).orElse(null);
         if (book == null)
@@ -401,542 +342,287 @@ public class ChatService {
         return buildPdfConnectionResult(book.getPdfPath(), book);
     }
 
-    // INTENT DETECTION
-
-    /**
-     * Các loại ý định câu hỏi.
-     * Thứ tự ưu tiên detect: ORDER → PRICE_SORT → SPECIFIC_BOOK → CONTENT_QUESTION
-     * → PRICE_INFO → CATALOG_SEARCH → GENERAL
-     */
-    enum ChatIntent {
-        ORDER, // Hỏi về đơn hàng
-        PRICE_SORT, // Hỏi sách giá cao/thấp nhất, sắp xếp theo giá
-        SPECIFIC_BOOK, // Hỏi thông tin một cuốn sách cụ thể (giá, tác giả, v.v.)
-        CONTENT_QUESTION, // Hỏi về nội dung/khái niệm trong sách (cần đọc PDF)
-        PRICE_INFO, // Hỏi giá một cuốn cụ thể
-        CATALOG_SEARCH, // Tìm/gợi ý sách
-        GENERAL // Câu hỏi chung (thời gian, chào hỏi, v.v.)
+    private boolean isFollowUpQuestion(String msg) {
+        if (msg == null || msg.isBlank())
+            return false;
+        String n = normalizeSearch(msg);
+        boolean hasFollowUpKeyword = n.matches(
+                ".*(con.*nao|con gi|cuon khac|sach khac|"
+                        + "cai khac|loai khac|them cai|them cuon|"
+                        + "the con|vay con|con nua|gi nua|"
+                        + "cuon do|sach do|no thi|cai do|"
+                        + "the thi|vay thi|mua di|dat hang di|"
+                        + "bao nhieu nua|gia nua|tac gia nua).*");
+        boolean veryShort = msg.trim().split("\\s+").length <= 6;
+        return hasFollowUpKeyword || veryShort;
     }
 
-    /**
-     * Phát hiện intent từ câu hỏi. Nhận allBooks từ ngoài (tránh query DB thêm).
-     * /**
-     * Hàm detectIntent dùng để xác định
-     * ý định (intent) của người dùng khi chat
-     */
-    private ChatIntent detectIntent(
-            String msg,
-            List<Book> allBooks) {
+    private String extractTopicFromHistory(List<ChatMessage> history, int recentN) {
+        if (history == null || history.size() < 2)
+            return "";
+        int end = history.size() - 1;
+        int start = Math.max(0, end - recentN);
+        StringBuilder ctx = new StringBuilder();
+        for (int i = start; i < end; i++) {
+            String content = history.get(i).getMessage();
+            if (content != null && !content.isBlank()) {
+                ctx.append(content).append(" ");
+            }
+        }
+        return ctx.toString().trim();
+    }
 
-        // Nếu message null hoặc rỗng
+    enum ChatIntent {
+        ORDER, PRICE_SORT, SPECIFIC_BOOK, CONTENT_QUESTION, PRICE_INFO, CATALOG_SEARCH, GENERAL
+    }
+
+    private ChatIntent detectIntent(String msg, List<Book> allBooks) {
         if (msg == null || msg.isBlank())
-
-            // Trả về intent mặc định GENERAL
             return ChatIntent.GENERAL;
 
-        // Normalize câu hỏi:
-        // - chuyển lowercase
-        // - bỏ dấu tiếng Việt
-        // - chuẩn hóa text
         String n = normalizeSearch(msg);
 
-        // 1. ĐƠN HÀNG
-        // matches():
-        // kiểm tra regex có khớp hay không
-        if (n.matches(
-                ".*(don hang|tra hang|huy don|"
-                        + "van chuyen|giao hang|"
-                        + "trang thai don|ma don).*"))
-
-            // Nếu có từ khóa liên quan đơn hàng
+        if (n.matches(".*(don hang|tra hang|huy don|van chuyen|giao hang|trang thai don|ma don).*"))
             return ChatIntent.ORDER;
 
-        // 2. SẮP XẾP / SO SÁNH GIÁ
-
-        // PHẢI detect trước SPECIFIC_BOOK
-        // vì user có thể hỏi:
-        // "cuốn java nào đắt nhất"
         if (n.matches(
-                ".*(gia cao nhat|dat nhat|"
-                        + "gia thap nhat|re nhat|gia re nhat|"
-
-                        + "sap xep.*gia|"
-                        + "gia.*sap xep|"
-
-                        + "giastienf|"
-                        + "gia tien cao|"
-                        + "gia tien thap|"
-
-                        + "cuon nao dat|"
-                        + "cuon nao re|"
-                        + "sach nao dat|"
-                        + "sach nao re|"
-
-                        + "dat hon|"
-                        + "re hon|"
-
-                        + "gia bao nhieu nhat|"
-                        + "so sanh gia).*"))
-
-            // Trả về intent PRICE_SORT
+                ".*(gia cao nhat|dat nhat|mac nhat|gia thap nhat|re nhat|gia re nhat|sap xep.*gia|gia.*sap xep|giastienf|gia tien cao|gia tien thap|cuon nao dat|cuon nao mac|cuon nao re|sach nao dat|sach nao mac|sach nao re|dat hon|mac hon|re hon|gia bao nhieu nhat|so sanh gia).*"))
             return ChatIntent.PRICE_SORT;
 
-        // 3. SÁCH CỤ THỂ
-
-        // Kiểm tra người dùng có hỏi
-        // đúng tên sách trong database không
-        if (isSpecificBookInfoQuestion(msg, allBooks))
-
-            // Ví dụ:
-            // "sách Java Core"
-            // "thông tin sách Spring Boot"
+        Book bookHint = findBestBookFromQuery(allBooks, msg);
+        if (bookHint != null && (isSpecificBookInfoQuestion(msg, allBooks)
+                || n.matches(".*(gia|bao nhieu|ton kho|tac gia|thong tin|chi tiet|mo ta).*")))
             return ChatIntent.SPECIFIC_BOOK;
 
-        // 4. HỎI NỘI DUNG SÁCH
-        // Kiểm tra có phải câu hỏi nội dung PDF không
-        if (isContentQuestion(n))
-
-            // Ví dụ:
-            // "nội dung chương 1"
-            // "sách nói gì về OOP"
-            return ChatIntent.CONTENT_QUESTION;
-
-        // 5. HỎI GIÁ
-        // Hỏi giá chung
-        // nhưng KHÔNG có tên sách cụ thể
-        if (n.matches(
-                ".*(gia|bao nhieu tien|"
-                        + "bao nhieu d|"
-                        + "bao nhieu dong).*"))
-
-            // Ví dụ:
-            // "sách bao nhiêu tiền"
-            return ChatIntent.PRICE_INFO;
-
-        // 6. TÌM KIẾM CATALOG
-        // Tìm sách / gợi ý / giới thiệu
-        if (n.matches(
-                ".*(co sach|"
-                        + "tim sach|"
-                        + "goi y sach|"
-                        + "sach nao|"
-                        + "co gi|"
-                        + "ban gi|"
-
-                        + "sach hay|"
-                        + "danh sach|"
-                        + "xem sach|"
-                        + "mua sach|"
-                        + "dat mua|"
-                        + "sach ve|"
-
-                        + "gioi thieu.*sach|"
-                        + "sach.*gioi thieu|"
-
-                        + "goi y|"
-                        + "gioi thieu).*"))
-
-            // Ví dụ:
-            // "gợi ý sách Java"
-            // "có sách backend không"
+        if (isCatalogQuestion(n))
             return ChatIntent.CATALOG_SEARCH;
 
-        // KHÔNG KHỚP GÌ
+        if (isContentQuestion(n))
+            return ChatIntent.CONTENT_QUESTION;
 
-        // Trả intent mặc định
+        if (n.matches(".*(gia|bao nhieu tien|bao nhieu d|bao nhieu dong).*"))
+            return ChatIntent.PRICE_INFO;
+
         return ChatIntent.GENERAL;
     }
 
-    // BUILD SYSTEM INSTRUCTION
-
-    /**
-     * Xây dựng system instruction đầy đủ cho AI.
-     * Đây là nơi "bơm" dữ liệu thực từ database vào context của AI.
-     * Nguyên tắc: chỉ đưa vào những gì AI THỰC SỰ CẦN để trả lời câu hỏi đó.
-     */
-    private String buildSystemInstruction(String username, String userMessage,
+    private String buildSystemInstruction(String username, String userMessage, String effectiveMessage,
             List<ChatMessage> history, List<Book> allBooks) {
-        // Stringbuilder để nối các chuỗi lại với nhau
         StringBuilder sb = new StringBuilder(BASE_INSTRUCTION);
-        // nối thời gian hiện tại vào sb
-        sb.append("\nThời gian hiện tại: ").append(LocalDateTime.now().format(FMT)).append("\n");
+        sb.append("\nThời gian hệ thống hiện tại: ").append(LocalDateTime.now().format(FMT)).append("\n");
 
-        // nối intent vào sb
-        ChatIntent intent = detectIntent(userMessage, allBooks);// intent là ý định của người dùng
-        sb.append("\n[INTENT: ").append(intent).append("]\n");
+        if (!effectiveMessage.equals(userMessage)) {
+            sb.append("\n[BỔ SUNG CONTEXT LỊCH SỬ CHAT ĐỂ ĐỌC HIỂU NGỮ CẢNH]\n");
+        }
+
+        ChatIntent intent = detectIntent(effectiveMessage, allBooks);
+        sb.append("\n[HỆ THỐNG PHÂN LOẠI INTENT: ").append(intent).append("]\n");
 
         try {
             switch (intent) {
-                case ORDER -> appendUserOrders(sb, username);// ORDER: xử lý câu hỏi về đơn hàng
-                case PRICE_SORT -> handlePriceSort(sb, allBooks, userMessage);// PRICE_SORT: xử lý câu hỏi về sắp xếp
-                                                                              // giá
-                case SPECIFIC_BOOK -> handleSpecificBook(sb, allBooks, userMessage);// SPECIFIC_BOOK: xử lý câu hỏi về
-                                                                                    // sách cụ thể
-                case CONTENT_QUESTION -> handleContentQuestion(sb, allBooks, userMessage);// CONTENT_QUESTION: xử lý câu
-                                                                                          // hỏi về nội dung sách
-                case PRICE_INFO -> handlePriceInfo(sb, allBooks, userMessage);// PRICE_INFO: xử lý câu hỏi về giá
-                case CATALOG_SEARCH -> handleCatalogSearch(sb, allBooks, userMessage);// CATALOG_SEARCH: xử lý câu hỏi
-                                                                                      // về tìm kiếm
-                default -> handleGeneralQuery(sb, allBooks, userMessage);
+                case ORDER -> appendUserOrders(sb, username);
+                case PRICE_SORT -> handlePriceSort(sb, allBooks, effectiveMessage);
+                case SPECIFIC_BOOK -> handleSpecificBook(sb, allBooks, effectiveMessage);
+                case CONTENT_QUESTION -> handleContentQuestion(sb, allBooks, effectiveMessage);
+                case PRICE_INFO -> handlePriceInfo(sb, allBooks, effectiveMessage);
+                case CATALOG_SEARCH -> handleCatalogSearch(sb, allBooks, effectiveMessage);
+                default -> handleGeneralQuery(sb, allBooks, effectiveMessage);
             }
 
-            // Thêm đơn hàng nếu câu hỏi liên quan đến đơn (ngoài ORDER intent)
             if (intent != ChatIntent.ORDER && username != null && !username.isBlank()
                     && normalizeSearch(userMessage).contains("don")) {
-                appendUserOrders(sb, username);// nối đơn hàng vào sb nếu câu hỏi liên quan đến đơn
+                appendUserOrders(sb, username);
             }
-
         } catch (Exception e) {
-            System.err.println("[ChatService] Lỗi buildSystemInstruction: " + e.getMessage());
+            System.err.println("[ChatService] Lỗi dựng SystemInstruction: " + e.getMessage());
         }
 
-        return sb.toString();
+        return trimSystemInstruction(sb.toString());
     }
 
-    // INTENT HANDLERS — mỗi handler CHỈ đưa vào thông tin CẦN THIẾT
+    /** Cắt system prompt để tránh vượt giới hạn token Gemini */
+    private String trimSystemInstruction(String instruction) {
+        if (instruction == null)
+            return "";
+        if (instruction.length() <= maxSystemChars)
+            return instruction;
+        return instruction.substring(0, maxSystemChars - 60)
+                + "\n\n[Context rút gọn do giới hạn kỹ thuật.]";
+    }
 
-    /**
-     * PRICE_SORT: Sắp xếp sách theo giá, trả lời tập trung vào thứ hạng giá.
-     */
     private void handlePriceSort(StringBuilder sb, List<Book> allBooks, String userMessage) {
-
-        // Chuẩn hóa câu hỏi user:
-        // - chuyển chữ thường
-        // - bỏ dấu tiếng Việt
-        // - bỏ ký tự dư
         String n = normalizeSearch(userMessage);
+        boolean descending = !n.matches(".*(re nhat|gia thap nhat|gia re nhat|thap nhat|re hon).*");
 
-        // Xác định kiểu sắp xếp giá
-        // true = giá cao -> thấp
-        // false = giá thấp -> cao
-
-        // Mặc định sẽ là giảm dần
-        // Trừ khi user hỏi:
-        // "rẻ nhất", "giá thấp nhất", ...
-        boolean descending = !n.matches(
-                ".*(re nhat|gia thap nhat|gia re nhat|thap nhat|re hon).*");
-
-        // Stream danh sách sách để:
-        // - lọc sách có giá
-        // - sắp xếp theo giá
-        // - giới hạn số lượng
         List<Book> sorted = allBooks.stream()
-                // Chỉ lấy sách có giá
                 .filter(b -> b.getPrice() != null)
-                // Sắp xếp theo giá
-                .sorted(
-                        // Nếu descending=true
-                        // -> sort giảm dần (đắt -> rẻ)
-                        descending ? Comparator
-                                .comparing(Book::getPrice)
-                                .reversed()
-                                // Nếu descending=false
-                                // -> sort tăng dần (rẻ -> đắt)
-                                : Comparator
-                                        .comparing(Book::getPrice))
-                // Giới hạn số lượng sách
-                // tránh prompt quá dài
+                .sorted(descending ? Comparator.comparing(Book::getPrice).reversed()
+                        : Comparator.comparing(Book::getPrice))
                 .limit(maxBooksInPrompt)
-                // Chuyển stream -> List
                 .collect(Collectors.toList());
-        // Nếu không có sách nào
+
         if (sorted.isEmpty()) {
-            sb.append(
-                    "\n[Không có sách nào trong hệ thống để so sánh giá.]\n");
+            sb.append("\n[Không tìm thấy sách phù hợp để xếp hạng giá.]\n");
             return;
         }
 
-        // Thêm tiêu đề vào prompt AI
-        sb.append("\n\n=== DANH SÁCH SÁCH SẮP XẾP THEO GIÁ (")
-                // Hiển thị kiểu sort
-                .append(
-                        descending ? "ĐẮT → RẺ" : "RẺ → ĐẮT")
+        sb.append("\n\n=== DANH SÁCH SÁCH ĐÃ SẮP XẾP THEO GIÁ (").append(descending ? "ĐẮT → RẺ" : "RẺ → ĐẮT")
                 .append(") ===\n");
-        // Biến đánh số thứ hạng
         int rank = 1;
-
-        // Duyệt từng sách
         for (Book b : sorted) {
-            sb.append(rank++)
-                    .append(". \"")
-                    // Tên sách
-                    .append(b.getTitle())
-                    .append("\"")
-                    // Giá sách
-                    .append(" — Giá: ")
-                    // Format tiền đẹp hơn
-                    .append(formatPrice(b.getPrice()))
-                    // Số lượng tồn kho
-                    .append(" | Còn: ")
-                    .append(b.getQuantity())
-                    .append(" cuốn\n");
+            sb.append(rank++).append(". \"").append(b.getTitle()).append("\" — Giá: ").append(formatPrice(b.getPrice()))
+                    .append(" | Kho: ").append(b.getQuantity()).append(" cuốn\n");
         }
 
-        // Thêm hướng dẫn cho AI
-        // để AI tập trung trả lời về giá
-        sb.append("\n[HƯỚNG DẪN TRẢ LỜI: ")
-                .append("Trả lời TẬP TRUNG vào thứ hạng giá. ")
-                .append("Nêu rõ cuốn ")
-                // Nếu sort giảm dần
-                // thì sách đầu tiên là đắt nhất
-                .append(
-                        descending ? "ĐẮT NHẤT" : "RẺ NHẤT")
-                .append(" ở vị trí số 1. ")
-                .append("Không cần mô tả nội dung sách trừ khi được hỏi.]\n");
+        sb.append(
+                "\n[HƯỚNG DẪN AI TRẢ LỜI: Trình bày cấu trúc chuẩn Gemini. Cung cấp câu mở đầu, dùng phần mục ## Bảng xếp hạng giá, phân tách bằng đường kẻ `---`, danh sách chấm hoặc đánh số. Làm nổi bật cuốn vị trí số 1.]\n");
     }
 
-    /**
-     * SPECIFIC_BOOK: Tìm đúng một cuốn sách và cung cấp thông tin phù hợp với câu
-     * hỏi.
-     * Nguyên tắc: nếu hỏi giá → chỉ nói giá; hỏi tác giả → chỉ nói tác giả; v.v.
-     */
     private void handleSpecificBook(StringBuilder sb, List<Book> allBooks, String userMessage) {
-        Book book = findSpecificBookInfoMatch(allBooks, userMessage);// tìm sách cụ thể
+        Book book = findSpecificBookInfoMatch(allBooks, userMessage);
         if (book == null) {
-            // Không tìm thấy sách cụ thể → fallback sang catalog
+            book = findBestBookFromQuery(allBooks, userMessage);
+        }
+        if (book == null) {
             handleCatalogSearch(sb, allBooks, userMessage);
             return;
         }
         String n = normalizeSearch(userMessage);
-        // Xác định user đang hỏi về khía cạnh nào
         boolean askPrice = n.matches(".*(gia|bao nhieu|bao tien).*");
         boolean askAuthor = n.matches(".*(tac gia|nguoi viet|ai viet|ai lam).*");
         boolean askStock = n.matches(".*(con hang|ton kho|con may|bao nhieu cuon).*");
         boolean askContent = isContentQuestion(n);
-        sb.append("\n=== THÔNG TIN SÁCH ===\n");
+
+        sb.append("\n=== NGỮ CẢNH DỮ LIỆU SÁCH CỤ THỂ ===\n");
         sb.append("Tên: \"").append(book.getTitle()).append("\"\n");
         if (askPrice || !askAuthor && !askStock && !askContent) {
-            // Nếu hỏi về giá, hoặc hỏi chung chung thì hiện giá
             sb.append("Giá: ").append(formatPrice(book.getPrice())).append("\n");
         }
         if (askAuthor || !askPrice && !askStock && !askContent) {
-            // Nếu hỏi về tác giả, hoặc hỏi chung chung thì hiện tác giả
             sb.append("Tác giả: ").append(book.getAuthor() != null ? book.getAuthor() : "Chưa rõ").append("\n");
         }
         if (askStock) {
             sb.append("Tồn kho: ").append(book.getQuantity()).append(" cuốn\n");
         }
         if (!askPrice && !askAuthor && !askStock) {
-            // Câu hỏi chung về sách → đưa đủ metadata
             appendBookDetail(sb, book);
         }
 
-        // Nếu hỏi về nội dung → đọc PDF
-        // Nếu user đang hỏi về nội dung sách
         if (askContent) {
-            // Kiểm tra sách có đường dẫn PDF hay không
-            if (
-            // pdfPath khác null
-            // nghĩa là có dữ liệu đường dẫn
-            book.getPdfPath() != null
-                    // Kiểm tra chuỗi không rỗng
-                    // ví dụ:sẽ bị loại
-                    && !book.getPdfPath().isBlank()
-                    // Kiểm tra file PDF có tồn tại
-                    // và đọc được không
-                    && pdfReaderService.isReadable(
-                            book.getPdfPath())) {
-                // Nếu PDF hợp lệ
-                // Trích nội dung liên quan từ PDF
-                // rồi append vào prompt AI
-                appendPdfExcerpts(
-                        // StringBuilder chứa context AI
-                        sb,
-                        // Tạo List chứa 1 book
-                        List.of(book),
-                        // Câu hỏi user
-                        // dùng để tìm đoạn liên quan
-                        userMessage);
-
+            if (book.getPdfPath() != null && !book.getPdfPath().isBlank()
+                    && pdfReaderService.isReadable(book.getPdfPath())) {
+                appendPdfExcerpts(sb, List.of(book), userMessage);
             } else {
-                // Nếu không có PDF hoặc PDF lỗi / không đọc được
-                // Thêm ghi chú cho AI biết
                 sb.append(
-                        // AI sẽ hiểu: không có PDF để đọc
-                        "[Lưu ý: Sách này chưa có file PDF. "
-                                // AI sẽ trả lời dựa trên
-                                // mô tả sách có sẵn trong DB
-                                + "Trả lời dựa trên mô tả có sẵn.]\n");
+                        "[Lưu ý hệ thống: Tác phẩm này chưa có file PDF đính kèm. Trả lời thuần túy và trung thực dựa trên trường dữ liệu Mô tả].\n");
             }
         }
-        // Thêm hướng dẫn cho AI
         sb.append(
-                // Yêu cầu AI tập trung đúng trọng tâm
-                "\n[HƯỚNG DẪN TRẢ LỜI: "
-                        // Không lan man
-                        + "Trả lời TẬP TRUNG vào đúng điều user hỏi. ")
-                // Không tự liệt kê thêm thông tin
-                .append(
-                        "Không liệt kê thêm thông tin không được hỏi.]\n");
+                "\n[HƯỚNG DẪN AI TRẢ LỜI: Định dạng chuẩn Gemini. Dùng ##, mục rõ ràng, phân vùng bằng dòng kẻ `---`, bullet points dạng hoa thị `*`. Đi trực tiếp vào trọng tâm câu hỏi].\n");
     }
 
-    /**
-     * CONTENT_QUESTION: Tìm sách có nội dung phù hợp (ưu tiên sách có PDF).
-     */
-    private void handleContentQuestion(
-            StringBuilder sb,
-            List<Book> allBooks,
-            String userMessage) {
-        // Tìm các sách liên quan đến câu hỏi user
-        // Ví dụ:
-        // user hỏi "OOP là gì"
-        // -> tìm các sách liên quan OOP
-        List<Book> candidates = findBooksForContentQuestion(
-                allBooks,
-                userMessage);
-        // Nếu tìm thấy sách liên quan
+    private void handleContentQuestion(StringBuilder sb, List<Book> allBooks, String userMessage) {
+        List<Book> candidates = findBooksForContentQuestion(allBooks, userMessage);
         if (!candidates.isEmpty()) {
-            // Đọc PDF của các sách đó
-            // và append nội dung liên quan vào AI prompt
-            boolean hasPdf = appendPdfExcerpts(
-                    sb,
-                    candidates,
-                    userMessage);
-            // Nếu không đọc được PDF nào
+            boolean hasPdf = appendPdfExcerpts(sb, candidates, userMessage);
             if (!hasPdf) {
-                // Thêm tiêu đề
+                sb.append("\n\n=== THÔNG TIN TÓM TẮT METADATA SÁCH LIÊN QUAN ===\n");
+                candidates.stream().limit(3).forEach(b -> {
+                    appendBookDetail(sb, b);
+                    sb.append("\n");
+                });
                 sb.append(
-                        "\n\n=== THÔNG TIN SÁCH LIÊN QUAN ===\n");
-                // Duyệt danh sách sách
-                candidates.stream()
-                        // Chỉ lấy tối đa 3 sách
-                        .limit(3)
-                        // Với mỗi sách
-                        .forEach(b ->
-                        // Append thông tin sách vào prompt
-                        appendBookLine(sb, b));
-                // Thêm ghi chú cho AI
-                sb.append(
-                        "[Lưu ý: Chưa đọc được PDF. "
-                                + "Trả lời dựa trên mô tả sách.]\n");
+                        "[Lưu ý: Hệ thống chưa có file PDF nội dung chi tiết. Phân tích dựa trên phần MÔ TẢ ở trên. Nếu phần mô tả trống, hãy thẳng thắn thông báo cho người dùng biết].\n");
             }
         } else {
-            // Nếu không tìm thấy sách nào khớp metadata
-            // Thử tìm full-text trong toàn bộ PDF
-            boolean foundInPdf = appendPdfExcerptsFromAllBooks(
-                    // StringBuilder prompt AI
-                    sb,
-                    // Toàn bộ sách trong hệ thống
-                    allBooks,
-                    // Câu hỏi user
-                    userMessage);
-
-            // Nếu vẫn không tìm thấy
+            boolean foundInPdf = appendPdfExcerptsFromAllBooks(sb, allBooks, userMessage);
             if (!foundInPdf) {
-                // Thêm hướng dẫn cho AI
-                sb.append("\n[Không tìm thấy thông tin liên quan "
-                        + "trong hệ thống. ")
-                        // Yêu cầu AI nói thật
-                        .append("Hãy nói thật với user ")
-                        // Gợi ý user hỏi cụ thể hơn
-                        .append("và gợi ý hỏi theo tên sách cụ thể.]\n");
+                sb.append(
+                        "\n[HƯỚNG DẪN AI: Không phát hiện dữ liệu liên quan trong kho. Hãy thẳng thắn phản hồi với tinh thần của một cộng sự chân thực, đề xuất người dùng cung cấp chính xác tên sách cụ thể].\n");
             }
         }
     }
 
-    /**
-     * PRICE_INFO: Hỏi giá chung (không có tên sách cụ thể).
-     * Hiển thị danh sách sách với giá — không cần metadata thừa.
-     */
     private void handlePriceInfo(StringBuilder sb, List<Book> allBooks, String userMessage) {
-        List<Book> relevant = findRelevantBooks(allBooks, userMessage, false);
-        // Tìm kiếm sách liên quan
-        List<Book> toShow = relevant.stream()
-                .filter(b -> b.getPrice() != null)// Lọc sách có giá
-                .limit(10)// Chỉ lấy tối đa 10 sách
-                .collect(Collectors.toList());// Collection lại danh sách sách
-
-        if (toShow.isEmpty()) {// kiểm tra xem danh sách sách có rỗng không
-            sb.append("\n[Không có thông tin giá trong hệ thống.]\n");
+        Book one = findBestBookFromQuery(allBooks, userMessage);
+        if (one != null) {
+            handleSpecificBook(sb, allBooks, userMessage);
             return;
         }
-        sb.append("\n\n=== BẢNG GIÁ SÁCH ===\n");
-        for (Book b : toShow) {// lặp qua danh sách sách
-            sb.append("- \"").append(b.getTitle()).append("\"")// in tên sách
-                    .append(" | ").append(formatPrice(b.getPrice()))// in giá sách
-                    .append(" | Còn: ").append(b.getQuantity()).append(" cuốn\n");// in số lượng sách
+        List<Book> relevant = findRelevantBooks(allBooks, userMessage, true);
+        List<Book> toShow = relevant.stream().filter(b -> b.getPrice() != null).limit(10).collect(Collectors.toList());
+
+        if (toShow.isEmpty()) {
+            sb.append("\n[Hệ thống chưa ghi nhận thông tin bảng giá cho danh mục này.]\n");
+            return;
         }
-        sb.append("\n[HƯỚNG DẪN TRẢ LỜI: Chỉ nói về giá, không thêm thông tin không liên quan.]\n");
+        sb.append("\n\n=== BẢNG BÁO GIÁ THAM KHẢO ===\n");
+        for (Book b : toShow) {
+            sb.append("* \"").append(b.getTitle()).append("\" | Giá niêm yết: ").append(formatPrice(b.getPrice()))
+                    .append(" | Kho: ").append(b.getQuantity()).append("\n");
+        }
+        sb.append(
+                "\n[HƯỚNG DẪN AI: Định dạng Gemini — Tiêu đề mục `## Bảng giá sách`, dùng dòng kẻ `---` và danh sách dấu chấm `*`].\n");
     }
 
-    /**
-     * CATALOG_SEARCH: Tìm/gợi ý sách theo từ khóa.
-     */
     private void handleCatalogSearch(StringBuilder sb, List<Book> allBooks, String userMessage) {
-        List<Book> relevant = findRelevantBooks(allBooks, userMessage, false);
+        List<Book> relevant = findRelevantBooks(allBooks, userMessage, true);
+        if (relevant.isEmpty()) {
+            sb.append(
+                    "\n[Hệ thống không tìm thấy kết quả nào khớp từ khóa. Hãy hướng dẫn người dùng tìm bằng từ khóa khái quát hơn].\n");
+            return;
+        }
 
-        sb.append("\n\n=== DANH SÁCH SÁCH (")
-                .append(relevant.size())
-                .append(relevant.size() < allBooks.size()
-                        ? " kết quả / " + allBooks.size() + " tổng"
-                        : " cuốn")
-                .append(") ===\n");
+        sb.append("\n\n=== KẾT QUẢ TRA CỨU DANH MỤC SÁCH (").append(relevant.size()).append(" dòng) ===\n");
         relevant.forEach(b -> appendBookLine(sb, b));
-        sb.append("\n[HƯỚNG DẪN TRẢ LỜI: Liệt kê sách ngắn gọn. ")
-                .append("Nếu user hỏi về thể loại cụ thể thì chỉ hiển thị sách thuộc thể loại đó.]\n");
+        sb.append(
+                "\n[HƯỚNG DẪN AI: Định dạng Gemini — Gợi ý trực quan theo dạng danh sách, cấu trúc rõ ràng với tiêu đề `## Kết quả tra cứu` và ngăn cách bằng đường kẻ `---`].\n");
     }
 
-    /**
-     * GENERAL: Câu hỏi chung, chỉ gợi ý vài cuốn nổi bật nếu liên quan đến sách.
-     */
     private void handleGeneralQuery(StringBuilder sb, List<Book> allBooks, String userMessage) {
         String n = normalizeSearch(userMessage);
-        // Chỉ gợi ý sách nếu câu hỏi có liên quan đến sách
         if (n.contains("sach") || n.contains("doc") || n.contains("goi y")) {
             List<Book> relevant = findRelevantBooks(allBooks, userMessage, false);
             if (!relevant.isEmpty()) {
-                sb.append("\n=== MỘT SỐ SÁCH NỔI BẬT ===\n");
+                sb.append("\n=== DANH SÁCH GỢI Ý TÁC PHẨM TIÊU BIỂU ===\n");
                 relevant.stream().limit(5).forEach(b -> appendBookLine(sb, b));
             }
         }
-        // Câu chào hỏi, hỏi thời gian, etc. → không cần thêm gì, AI tự trả lời
     }
 
-    /**
-     * ORDER: Đơn hàng của user.
-     */
     private void appendUserOrders(StringBuilder sb, String username) {
         try {
-            if (username == null || username.isBlank())// kiểm tra xem username có rỗng hay không
+            if (username == null || username.isBlank())
                 return;
-            List<Order> orders = orderRepo.findByUsername(username);// lấy danh sách đơn hàng của user
-            if (orders.isEmpty()) {// kiểm tra xem danh sách đơn hàng có rỗng hay không
-                sb.append("\n[User chưa có đơn hàng nào.]\n");
+            List<Order> orders = orderRepo.findByUsername(username);
+            if (orders.isEmpty()) {
+                sb.append("\n[Dữ liệu hệ thống: Tài khoản người dùng chưa thực hiện đơn hàng nào.]\n");
                 return;
             }
-            sb.append("\n=== ĐƠN HÀNG CỦA \"").append(username) // thêm tên user vào prompt
-                    .append("\" (").append(orders.size()).append(" đơn) ===\n");
-            for (Order o : orders) {// duyệt danh sách đơn hàng
-                sb.append("- Đơn #").append(o.getId())
-                        .append(" | Trạng thái: ").append(o.getStatus())
-                        .append(" | Tổng: ").append(formatPrice(o.getTotalAmount()))
+            sb.append("\n=== LỊCH SỬ ĐƠN HÀNG CỦA TÀI KHOẢN \"").append(username).append("\" (").append(orders.size())
+                    .append(" bản ghi) ===\n");
+            for (Order o : orders) {
+                sb.append("* Đơn mã #").append(o.getId())
+                        .append(" | Trạng thái xử lý: ").append(o.getStatus())
+                        .append(" | Tổng giá trị: ").append(formatPrice(o.getTotalAmount()))
                         .append(" | Người nhận: ").append(o.getCustomerName())
-                        .append(" | Ngày: ")
-                        .append(o.getCreateDate() != null ? o.getCreateDate().format(FMT) : "Chưa rõ")
+                        .append(" | Ngày lập đơn: ")
+                        .append(o.getCreateDate() != null ? o.getCreateDate().format(FMT) : "Chưa cập nhật")
                         .append("\n");
             }
         } catch (Exception e) {
-            System.err.println("[ChatService] Lỗi load orders: " + e.getMessage());
+            System.err.println("[ChatService] Lỗi tải dữ liệu đơn hàng: " + e.getMessage());
         }
     }
 
-    // CLASSIFIERS (phân loại câu hỏi)
-    /**
-     * Nhận biết câu hỏi về NỘI DUNG sách (cần đọc PDF).
-     * Loại trừ câu hỏi về giá/sort để tránh bắt nhầm.
-     */
     private boolean isContentQuestion(String normalizedMsg) {
         if (normalizedMsg == null)
             return false;
 
-        // Loại trừ câu hỏi về giá — KHÔNG phải content question
-        // normalizedMsg.matches : kiểm tra xem chuỗi có khớp với biểu thức chính quy
-        // không
-        if (normalizedMsg.matches(".*(gia cao nhat|dat nhat|re nhat|gia thap nhat|"
-                + "gia bao nhieu|bao nhieu tien|sap xep gia|so sanh gia).*"))
+        if (normalizedMsg.matches(
+                ".*(gia cao nhat|dat nhat|mac nhat|re nhat|gia thap nhat|gia bao nhieu|bao nhieu tien|sap xep gia|so sanh gia).*"))
             return false;
 
-        // Từ khóa chỉ rõ câu hỏi nội dung
         String[] contentKeywords = {
                 "y nghia", "giai thich", "la gi", "nhu the nao", "noi dung",
                 "chuong", "phan ", "khai niem", "dinh nghia", "tu luyen",
@@ -948,67 +634,51 @@ public class ChatService {
                 "bai hoc", "thong diep", "tinh than", "triet ly", "dao ly",
                 "la ai", "noi gi", "viet gi", "de cap", "dung den"
         };
-        // normalize câu hỏi
         for (String kw : contentKeywords) {
-            if (normalizedMsg.contains(kw))// kiểm tra xem có chứa từ khóa nào không
+            if (normalizedMsg.contains(kw))
                 return true;
         }
 
-        // Câu hỏi dạng "X là ai/là gì"
         if (normalizedMsg.matches(".*(la ai|la gi|la cai gi|nghia la gi).*"))
             return true;
+        if (isCatalogQuestion(normalizedMsg))
+            return false;
 
-        // Có dấu ? nhưng KHÔNG phải hỏi giá/tồn kho/sort
-        if (normalizedMsg.contains("?")) {// kiểm tra xem có chứa dấu ? không
-            boolean isMetadataQuestion = normalizedMsg.matches(
-                    ".*(gia|bao nhieu|con hang|con may|ton kho|tac gia|nguoi viet|xuat ban).*");
-            return !isMetadataQuestion;// trả về true nếu không phải câu hỏi metadata
+        if (normalizedMsg.contains("?")) {
+            boolean isMetadataQuestion = normalizedMsg
+                    .matches(".*(gia|bao nhieu|con hang|con may|ton kho|tac gia|nguoi viet|xuat ban).*");
+            return !isMetadataQuestion;
         }
         return false;
     }
 
-    /**
-     * Nhận biết câu hỏi tìm/gợi ý sách — cần liệt kê danh sách.
-     */
     private boolean isCatalogQuestion(String normalizedMsg) {
         if (normalizedMsg == null)
             return false;
-        return normalizedMsg.matches(".*(co sach|tim sach|goi y sach|sach nao|co gi|ban gi|"
-                + "sach hay|danh sach|xem sach|mua sach|dat mua|sach ve).*");
+        return normalizedMsg.matches(
+                ".*(co sach|tim sach|goi y sach|sach nao|co gi|ban gi|sach hay|danh sach|xem sach|mua sach|dat mua|sach ve).*");
     }
 
-    /**
-     * Nhận biết câu hỏi thông tin một cuốn sách cụ thể.
-     */
     private boolean isSpecificBookInfoQuestion(String userMessage, List<Book> allBooks) {
-        if (userMessage == null) // kiểm tra xem userMessage có rỗng không
+        if (userMessage == null)
             return false;
-        String n = normalizeSearch(userMessage); // normalize câu hỏi
-
-        // Thử trích tên sách từ câu hỏi
+        String n = normalizeSearch(userMessage);
         if (extractBookTitleFromQuestion(n, allBooks) != null)
             return true;
 
-        // Fallback: hỏi thông tin + đề cập sách
-        boolean asksForInfo = n.matches(".*\\b(thong tin|chi tiet|mo ta|gioi thieu|gia|bao nhieu|"
-                + "con hang|ton kho|tac gia|nguoi viet|xuat ban)\\b.*");
+        boolean asksForInfo = n.matches(
+                ".*\\b(thong tin|chi tiet|mo ta|gioi thieu|gia|bao nhieu|con hang|ton kho|tac gia|nguoi viet|xuat ban)\\b.*");
         boolean mentionsBook = n.matches(".*\\b(sach|cuon|book)\\b.*");
         return asksForInfo && mentionsBook;
     }
 
-    // TÌM SÁCH
-    /**
-     * Trích xuất tên sách từ câu hỏi bằng cách loại bỏ stop words và từ hỏi,
-     * sau đó khớp với tên sách trong DB.
-     */
     private String extractBookTitleFromQuestion(String normalizedQuery, List<Book> allBooks) {
         if (normalizedQuery == null || normalizedQuery.isBlank())
             return null;
         String cleaned = normalizedQuery
-                .replaceAll("\\b(cho toi biet|cho minh biet|cho toi|cho minh|xem|ve|cua|"
-                        + "thong tin|chi tiet|mo ta|gioi thieu|gia|bao nhieu|tac gia|"
-                        + "nguoi viet|con hang|ton kho|sach|cuon|book|tom tat|doc|pdf|"
-                        + "noi dung|chuong|tiet|phan|hoi|muon|can|hay|giup|nhe|nha|ad)\\b", " ")
+                .replaceAll(
+                        "\\b(cho toi biet|cho minh biet|cho toi|cho minh|xem|ve|cua|thong tin|chi tiet|mo ta|gioi thieu|gia|bao nhieu|tac gia|nguoi viet|con hang|ton kho|sach|cuon|book|tom tat|doc|pdf|noi dung|chuong|tiet|phan|hoi|muon|can|hay|giup|nhe|nha|ad|mac|dat|re)\\b",
+                        " ")
                 .replaceAll("\\s+", " ").trim();
         if (cleaned.length() < 3)
             return null;
@@ -1022,51 +692,42 @@ public class ChatService {
                 .orElse(null);
     }
 
-    /**
-     * Tìm đúng một cuốn sách phù hợp nhất với câu hỏi (cho SPECIFIC_BOOK intent).
-     */
     private Book findSpecificBookInfoMatch(List<Book> allBooks, String userMessage) {
+        Book best = findBestBookFromQuery(allBooks, userMessage);
+        if (best != null)
+            return best;
+
         if (!isSpecificBookInfoQuestion(userMessage, allBooks))
             return null;
         String extracted = extractBookTitleFromQuestion(normalizeSearch(userMessage), allBooks);
         if (extracted != null) {
             String nt = normalizeSearch(extracted);
-            Book exact = allBooks.stream()
-                    .filter(b -> normalizeSearch(b.getTitle()).equals(nt))
-                    .findFirst().orElse(null);
+            Book exact = allBooks.stream().filter(b -> normalizeSearch(b.getTitle()).equals(nt)).findFirst()
+                    .orElse(null);
             if (exact != null)
                 return exact;
             return allBooks.stream()
-                    .filter(b -> b.getTitle().toLowerCase(Locale.ROOT)
-                            .contains(extracted.toLowerCase(Locale.ROOT)))
+                    .filter(b -> b.getTitle().toLowerCase(Locale.ROOT).contains(extracted.toLowerCase(Locale.ROOT)))
                     .findFirst().orElse(null);
         }
         List<Book> matched = findRelevantBooks(allBooks, userMessage, true);
         return matched.size() == 1 ? matched.get(0) : null;
     }
 
-    /**
-     * Tìm sách phù hợp cho câu hỏi nội dung.
-     * Ưu tiên sách có PDF readable lên đầu danh sách.
-     */
     private List<Book> findBooksForContentQuestion(List<Book> allBooks, String userMessage) {
+        List<String> keywords = extractSearchKeywords(userMessage);
         List<Book> byMetadata = allBooks.stream()
-                .map(b -> Map.entry(b, scoreBookMatch(b, userMessage)))
-                // tìm các sách có điểm số >= 20
+                .map(b -> Map.entry(b, scoreBookMatch(b, keywords, userMessage)))
                 .filter(e -> e.getValue() >= 20)
-                // sắp xếp sách theo điểm số giảm dần
                 .sorted(Comparator.comparingInt((Map.Entry<Book, Integer> e) -> e.getValue()).reversed())
-                // lấy sách
                 .map(Map.Entry::getKey)
                 .collect(Collectors.toList());
 
-        List<Book> withPdf = byMetadata.stream()
-                .filter(b -> b.getPdfPath() != null && !b.getPdfPath().isBlank()
-                        && pdfReaderService.isReadable(b.getPdfPath()))
+        List<Book> withPdf = byMetadata.stream().filter(
+                b -> b.getPdfPath() != null && !b.getPdfPath().isBlank() && pdfReaderService.isReadable(b.getPdfPath()))
                 .collect(Collectors.toList());
-        List<Book> withoutPdf = byMetadata.stream()
-                .filter(b -> b.getPdfPath() == null || b.getPdfPath().isBlank()
-                        || !pdfReaderService.isReadable(b.getPdfPath()))
+        List<Book> withoutPdf = byMetadata.stream().filter(
+                b -> b.getPdfPath() == null || b.getPdfPath().isBlank() || !pdfReaderService.isReadable(b.getPdfPath()))
                 .collect(Collectors.toList());
 
         List<Book> result = new ArrayList<>(withPdf);
@@ -1074,92 +735,104 @@ public class ChatService {
         return result;
     }
 
-    /**
-     * Tìm sách liên quan dựa trên điểm số (title, author, category, description).
-     * 
-     * @param strict nếu true, chỉ trả về sách score > 10; false thì fallback tất cả
-     */
     private List<Book> findRelevantBooks(List<Book> books, String userMessage, boolean strict) {
         if (books == null || books.isEmpty())
             return List.of();
-
         String q = userMessage != null ? userMessage.trim() : "";
-        if (q.length() < 2 || isGenericBookQuery(q))
+        if (q.length() < 2)
+            return List.of();
+
+        if (isGenericBookQuery(q))
             return books.stream().limit(maxBooksInPrompt).collect(Collectors.toList());
 
-        List<Book> matched = books.stream()
-                .map(b -> Map.entry(b, scoreBookMatch(b, q)))
-                .filter(e -> e.getValue() >= 10)
+        List<String> keywords = extractSearchKeywords(userMessage);
+        if (keywords.isEmpty())
+            return List.of();
+
+        return books.stream()
+                .map(b -> Map.entry(b, scoreBookMatch(b, keywords, q)))
+                .filter(e -> e.getValue() >= 20)
                 .sorted(Comparator.comparingInt((Map.Entry<Book, Integer> e) -> e.getValue()).reversed())
                 .map(Map.Entry::getKey)
                 .limit(maxBooksInPrompt)
                 .collect(Collectors.toList());
-
-        if (!matched.isEmpty())
-            return matched;
-        return strict ? List.of() : books.stream().limit(maxBooksInPrompt).collect(Collectors.toList());
     }
 
-    /**
-     * Kiểm tra câu hỏi generic (hỏi danh sách chung không có chủ đề cụ thể).
-     * Ví dụ: "có sách gì", "danh sách sách" — không có chủ đề rõ ràng.
-     */
+    private List<String> extractSearchKeywords(String userMessage) {
+        if (userMessage == null || userMessage.isBlank())
+            return List.of();
+        return Arrays.stream(normalizeSearch(userMessage).split("\\s+"))
+                .filter(t -> t.length() >= 2)
+                .filter(t -> !STOP_WORDS.contains(t))
+                .distinct()
+                .collect(Collectors.toList());
+    }
+
+    private Book findBestBookFromQuery(List<Book> allBooks, String userMessage) {
+        if (allBooks == null || allBooks.isEmpty() || userMessage == null || userMessage.isBlank())
+            return null;
+
+        String nq = normalizeSearch(userMessage);
+        List<String> keywords = extractSearchKeywords(userMessage);
+        if (keywords.isEmpty())
+            return null;
+
+        String phrase = String.join(" ", keywords);
+        Book best = null;
+        int bestScore = 0;
+
+        for (Book b : allBooks) {
+            int score = scoreBookMatch(b, keywords, userMessage);
+            String title = normalizeSearch(b.getTitle());
+            if (phrase.length() >= 4 && title.contains(phrase))
+                score += 50;
+            if (title.length() >= 3 && nq.contains(title))
+                score += 40;
+            if (score > bestScore) {
+                bestScore = score;
+                best = b;
+            }
+        }
+        return bestScore >= 28 ? best : null;
+    }
+
     private boolean isGenericBookQuery(String q) {
         String n = normalizeSearch(q);
-        // Chỉ có từ chung về sách, không có chủ đề cụ thể
         return n.matches(".*\\b(sach|danh sach|co gi|ban gi|goi y|xem sach)\\b.*")
-                && !n.matches(".*\\b(java|python|lap trinh|lich su|van hoc|toan|van|anh|sinh|"
-                        + "ky nang|kinh doanh|tam ly|triet hoc|khoa hoc|the thao|"
-                        + "ban hang|marketing|kinh te|giao duc|y hoc|cong nghe)\\b.*");
+                && !n.matches(
+                        ".*\\b(java|python|lap trinh|lich su|van hoc|toan|van|anh|sinh|ky nang|kinh doanh|tam ly|triet hoc|khoa hoc|the thao|ban hang|marketing|kinh te|giao duc|y hoc|cong nghe)\\b.*");
     }
 
-    /**
-     * Tính điểm liên quan giữa sách và câu hỏi.
-     * Điểm cao hơn = liên quan hơn.
-     */
-    private int scoreBookMatch(Book b, String q) {
-        String nq = normalizeSearch(q);
+    private int scoreBookMatch(Book b, List<String> keywords, String fullQuery) {
         String title = normalizeSearch(b.getTitle());
-        String author = normalizeSearch(b.getAuthor());
-        String category = normalizeSearch(b.getCategory());
-        String desc = normalizeSearch(b.getDescription());
+        String author = normalizeSearch(b.getAuthor() != null ? b.getAuthor() : "");
+        String category = normalizeSearch(b.getCategory() != null ? b.getCategory() : "");
+        String desc = normalizeSearch(b.getDescription() != null ? b.getDescription() : "");
 
         int score = 0;
+        String phrase = String.join(" ", keywords);
+        if (phrase.length() >= 4) {
+            if (title.contains(phrase))
+                score += 80;
+            if (category.contains(phrase))
+                score += 50;
+        }
 
-        // Khớp toàn cụm
-        if (title.contains(nq) || nq.contains(title)) // nếu title chứa nq hoặc nq chứa title
-            score += 100; // tăng score lên 100
-        if (category.contains(nq) || nq.contains(category)) // nếu category chứa nq hoặc nq chứa category
-            score += 60; // tăng score lên 60
-        if (author.contains(nq)) // nếu author chứa nq
-            score += 40;
-        if (desc.contains(nq))
-            score += 25;
-
-        // Khớp từng token
-        for (String token : nq.split("\\s+")) {
-            if (token.length() < 3 || STOP_WORDS.contains(token))
+        for (String token : keywords) {
+            if (token.length() < 2 || STOP_WORDS.contains(token))
                 continue;
             if (title.contains(token))
-                score += 30;
+                score += token.length() >= 5 ? 35 : 28;
             if (category.contains(token))
-                score += 20;
+                score += 22;
             if (author.contains(token))
-                score += 15;
+                score += 18;
             if (desc.contains(token))
-                score += 10;
+                score += 8;
         }
         return score;
     }
 
-    // ĐỌC PDF VÀO PROMPT
-
-    /**
-     * Đọc nội dung PDF và đưa đoạn liên quan vào system prompt.
-     * Giới hạn tổng 12.000 ký tự và tối đa 3 sách để tránh vượt token limit.
-     * 
-     * @return true nếu đọc được ít nhất 1 PDF
-     */
     private boolean appendPdfExcerpts(StringBuilder sb, List<Book> books, String userMessage) {
         List<Book> sorted = books.stream()
                 .sorted(Comparator.comparingInt(b -> (b.getPdfPath() != null && !b.getPdfPath().isBlank()
@@ -1183,7 +856,7 @@ public class ChatService {
             try {
                 pdfText = pdfReaderService.extractText(path);
             } catch (Exception e) {
-                System.err.println("[ChatService] Lỗi extractText bookId=" + b.getId() + ": " + e.getMessage());
+                System.err.println("[ChatService] Lỗi trích văn bản PDF bookId=" + b.getId() + ": " + e.getMessage());
                 continue;
             }
 
@@ -1196,9 +869,8 @@ public class ChatService {
                 continue;
 
             String label = (b.getPdfName() != null && !b.getPdfName().isBlank()) ? b.getPdfName() : b.getTitle();
-            sb.append("\n\n=== TRÍCH NỘI DUNG PDF (\"").append(b.getTitle())
-                    .append("\" | file: ").append(label).append(") ===\n")
-                    .append(snippet).append("\n");
+            sb.append("\n\n=== TRÍCH ĐOẠN NỘI DUNG TÀI LIỆU PDF (\"").append(b.getTitle()).append("\" | File: ")
+                    .append(label).append(") ===\n").append(snippet).append("\n");
 
             totalCharsAdded += snippet.length();
             added++;
@@ -1206,14 +878,9 @@ public class ChatService {
         return added > 0;
     }
 
-    /**
-     * Tìm kiếm nội dung câu hỏi trong TẤT CẢ file PDF (fallback khi không khớp
-     * metadata).
-     */
     private boolean appendPdfExcerptsFromAllBooks(StringBuilder sb, List<Book> allBooks, String userMessage) {
         String nq = normalizeSearch(userMessage);
-        String[] queryTokens = Arrays.stream(nq.split("\\s+"))
-                .filter(t -> t.length() >= 4 && !STOP_WORDS.contains(t))
+        String[] queryTokens = Arrays.stream(nq.split("\\s+")).filter(t -> t.length() >= 4 && !STOP_WORDS.contains(t))
                 .toArray(String[]::new);
 
         if (queryTokens.length == 0)
@@ -1242,7 +909,7 @@ public class ChatService {
                 if (count >= minMatch)
                     matchingBooks.add(b);
             } catch (Exception e) {
-                System.err.println("[ChatService] Lỗi đọc PDF bookId=" + b.getId() + ": " + e.getMessage());
+                System.err.println("[ChatService] Thất bại khi quét PDF bookId=" + b.getId() + ": " + e.getMessage());
             }
 
             if (matchingBooks.size() >= 2)
@@ -1254,26 +921,11 @@ public class ChatService {
         return appendPdfExcerpts(sb, matchingBooks, userMessage);
     }
 
-    /**
-     * Phát hiện câu boilerplate (thông tin nhà xuất bản, bản quyền, liên hệ...).
-     * Những câu này sẽ bị bỏ qua HOÀN TOÀN, không tính điểm.
-     */
     private boolean isBoilerplateSentence(String normalizedSentence) {
         return normalizedSentence.matches(
-                ".*(nha xuat ban|nxb|ban quyen|all rights reserved|copyright|isbn|" +
-                        "tru so chinh|chi nhanh|so dien thoai|tel|fax|email|website|http|www\\.|" +
-                        "in lan|in lan thu|tai ban|tai ban lan|xuat ban lan|" +
-                        "fulfillment|amazon|moq|minimum order|muc dat hang toi thieu|" +
-                        "lien he|hop dong|giay phep|so giay phep|gkxb|" +
-                        "gia tien viet nam|in tai|quan 1|quan 3|ha noi|ho chi minh|" +
-                        "marketing@|info@|support@|sales@|publisher).*");
+                ".*(nha xuat ban|nxb|ban quyen|all rights reserved|copyright|isbn|tru so chinh|chi nhanh|so dien thoai|tel|fax|email|website|http|www\\.|in lan|in lan thu|tai ban|tai ban lan|xuat ban lan|fulfillment|amazon|moq|minimum order|muc dat hang toi thieu|lien he|hop dong|giay phep|so giay phep|gkxb|gia tien viet nam|in tai|quan 1|quan 3|ha noi|ho chi minh|marketing@|info@|support@|sales@|publisher).*");
     }
 
-    /**
-     * Lọc bỏ từng DÒNG boilerplate khỏi nội dung PDF thô trước khi gửi lên Gemini.
-     * Hoạt động ở cấp độ dòng (finer grain) — bổ sung cho isBoilerplateSentence
-     * (cấp câu).
-     */
     private String filterBoilerplateFromPdf(String rawPdfText) {
         if (rawPdfText == null || rawPdfText.isBlank())
             return "";
@@ -1291,21 +943,15 @@ public class ChatService {
         return filtered.toString().trim();
     }
 
-    /**
-     * Trích xuất đoạn văn LIÊN QUAN NHẤT từ PDF dựa trên câu hỏi.
-     * Tách câu → lọc boilerplate → tính điểm → ghép những câu có điểm cao nhất.
-     */
     private String extractRelevantSnippet(String pdfText, String question, int maxLen) {
         if (pdfText == null || pdfText.isBlank())
             return "";
 
         String[] sentences = pdfText.split("(?<=[.!?\\n])\\s+");
         String nq = normalizeSearch(question);
-        String[] queryTokens = Arrays.stream(nq.split("\\s+"))
-                .filter(t -> t.length() >= 3 && !STOP_WORDS.contains(t))
+        String[] queryTokens = Arrays.stream(nq.split("\\s+")).filter(t -> t.length() >= 3 && !STOP_WORDS.contains(t))
                 .toArray(String[]::new);
 
-        // Tính điểm cho từng câu
         record ScoredSentence(String text, int score) {
         }
         List<ScoredSentence> scored = new ArrayList<>();
@@ -1316,8 +962,6 @@ public class ChatService {
                 continue;
 
             String ns = normalizeSearch(trimmed);
-
-            // Bỏ qua câu boilerplate (thông tin nhà xuất bản, địa chỉ, bản quyền...)
             if (isBoilerplateSentence(ns))
                 continue;
 
@@ -1332,7 +976,6 @@ public class ChatService {
                 scored.add(new ScoredSentence(trimmed, score));
         }
 
-        // Sắp xếp theo điểm giảm dần, lấy những câu tốt nhất
         scored.sort(Comparator.comparingInt(ScoredSentence::score).reversed());
 
         StringBuilder result = new StringBuilder();
@@ -1344,8 +987,6 @@ public class ChatService {
 
         return safeSubstring(result.toString().trim(), maxLen);
     }
-
-    // PDF CONNECTION CHECK
 
     private Map<String, Object> buildPdfConnectionResult(String pdfPath, Book book) {
         Map<String, Object> result = new LinkedHashMap<>();
@@ -1359,14 +1000,14 @@ public class ChatService {
 
         if (pdfPath == null || pdfPath.isBlank()) {
             result.put("connected", false);
-            result.put("message", "Chưa có pdf_path trong database");
+            result.put("message", "Chưa cấu hình đường dẫn pdf_path trong DB.");
             return result;
         }
 
         var resolved = pdfReaderService.resolvePdfPath(pdfPath);
         if (resolved == null) {
             result.put("connected", false);
-            result.put("message", "File PDF không tồn tại trên server. Kiểm tra app.upload.dir");
+            result.put("message", "Tệp PDF không tồn tại trên vùng lưu trữ vật lý của máy chủ.");
             return result;
         }
 
@@ -1377,7 +1018,7 @@ public class ChatService {
         boolean ok = preview != null && !preview.startsWith("Không đọc được");
         result.put("readable", ok);
         result.put("previewLength", ok ? preview.length() : 0);
-        result.put("message", ok ? "✅ Đã kết nối và đọc được PDF" : preview);
+        result.put("message", ok ? "✅ Kết nối thành công. Đã đọc thông suốt file PDF." : preview);
 
         if (book == null) {
             Book found = findBookByPdfPath(pdfPath);
@@ -1404,17 +1045,12 @@ public class ChatService {
                 .findFirst().orElse(null);
     }
 
-    // FALLBACK LOCAL ANSWER (khi Gemini hết quota / lỗi mạng)
-    /**
-     * Xây dựng câu trả lời local dựa hoàn toàn vào dữ liệu DB (không gọi AI).
-     */
     private String buildSmartLocalAnswer(String userMessage, List<Book> books) {
         if (userMessage == null || userMessage.isBlank())
             return null;
         try {
             ChatIntent intent = detectIntent(userMessage, books);
 
-            // PRICE_SORT — trả lời ngay không cần Gemini
             if (intent == ChatIntent.PRICE_SORT) {
                 String n = normalizeSearch(userMessage);
                 boolean desc = !n.matches(".*(re nhat|gia thap nhat|gia re nhat|thap nhat).*");
@@ -1424,25 +1060,24 @@ public class ChatService {
                                 : Comparator.comparing(Book::getPrice))
                         .limit(10).collect(Collectors.toList());
                 if (sorted.isEmpty())
-                    return "Hiện chưa có sách nào trong hệ thống.";
+                    return "Hiện chưa có tác phẩm nào khả dụng để tra cứu giá.";
                 StringBuilder sb = new StringBuilder();
-                sb.append("Mình tìm thấy các cuốn sách sắp xếp theo giá ")
-                        .append(desc ? "(đắt → rẻ)" : "(rẻ → đắt)").append(":\n\n");
+                sb.append("Dưới đây là danh sách sách được sắp xếp theo hệ thống giá ")
+                        .append(desc ? "(Từ cao đến thấp)" : "(Từ thấp đến cao)")
+                        .append(":\n\n---\n\n## Kết quả phân loại\n");
                 int i = 1;
                 for (Book b : sorted) {
-                    sb.append(i++).append(". **").append(b.getTitle()).append("**")
-                            .append(" — ").append(formatPrice(b.getPrice()))
-                            .append(" | Còn ").append(b.getQuantity()).append(" cuốn\n");
+                    sb.append(i++).append(". **").append(b.getTitle()).append("** — Gia: **")
+                            .append(formatPrice(b.getPrice())).append("** | Kho còn: ").append(b.getQuantity())
+                            .append(" bản\n");
                 }
                 return sb.toString().trim();
             }
 
-            // SPECIFIC_BOOK
             Book specific = findSpecificBookInfoMatch(books, userMessage);
             if (specific != null) {
                 String pdfText = null;
-                if (isContentQuestion(normalizeSearch(userMessage))
-                        && specific.getPdfPath() != null
+                if (isContentQuestion(normalizeSearch(userMessage)) && specific.getPdfPath() != null
                         && pdfReaderService.isReadable(specific.getPdfPath())) {
                     pdfText = pdfReaderService.extractText(specific.getPdfPath());
                     if (pdfText != null && pdfText.startsWith("Không đọc được"))
@@ -1451,7 +1086,6 @@ public class ChatService {
                 return formatDetailedBookAnswer(specific, userMessage, pdfText, false);
             }
 
-            // CONTENT_QUESTION
             if (intent == ChatIntent.CONTENT_QUESTION) {
                 List<Book> candidates = findBooksForContentQuestion(books, userMessage);
                 if (!candidates.isEmpty()) {
@@ -1461,131 +1095,261 @@ public class ChatService {
                         if (pdfText != null && !pdfText.startsWith("Không đọc được"))
                             return formatDetailedBookAnswer(primary, userMessage, pdfText, candidates.size() > 1);
                     }
+                    String answer = formatDetailedBookAnswer(primary, userMessage, null, candidates.size() > 1);
+                    boolean hasDesc = primary.getDescription() != null && !primary.getDescription().isBlank();
+                    if (!hasDesc) {
+                        answer += "\n\n> ⚠️ *Tác phẩm hiện chưa được cập nhật file đính kèm lẫn mô tả. Hãy thử tra cứu từ khóa khác nhé!*";
+                    }
+                    return answer;
                 }
-                return "Mình chưa tìm thấy thông tin về chủ đề này. "
-                        + "Bạn thử hỏi theo tên cuốn sách cụ thể nhé! 📚";
+                return "Mình chưa tìm thấy phân đoạn tri thức phù hợp. Hãy chỉ định tên cuốn sách cụ thể nhé! 📚";
             }
 
-            // CATALOG_SEARCH / default
+            Book single = findBestBookFromQuery(books, userMessage);
+            if (single != null && isSpecificBookInfoQuestion(userMessage, books))
+                return formatDetailedBookAnswer(single, userMessage, null, false);
+
             List<Book> matched = findRelevantBooks(books, userMessage, true);
-            if (matched.isEmpty())
-                return "Rất tiếc, mình chưa tìm thấy sách phù hợp.\n\n"
-                        + "Bạn thử gõ rõ tên sách hoặc thể loại (ví dụ: *lập trình*, *lịch sử*) nhé.";
+            if (matched.isEmpty()) {
+                String topic = String.join(" ", extractSearchKeywords(userMessage));
+                String searchTag = topic.isBlank() ? ""
+                        : "<ActionTrigger type=\"search\" target=\"books\" query=\"" + topic.replace("\"", "'")
+                                + "\">🔍 Tìm kiếm \"" + topic + "\"</ActionTrigger>\n";
+                return ("Thật lòng mà nói, mình chưa tìm thấy cuốn sách nào khớp hoàn toàn với mô tả của bạn.\n\nBạn có thể thử gõ tên cụ thể hoặc chuyên ngành hẹp (ví dụ: *Lập trình Java*, *Tâm lý học*) để mình quét lại kho dữ liệu nhé.\n\n---\n**Gợi ý bước tiếp theo:** 👇\n<ActionTrigger type=\"navigate\" target=\"books\">📚 Xem toàn bộ kệ sách</ActionTrigger>\n"
+                        + searchTag).trim();
+            }
             if (matched.size() == 1)
                 return formatDetailedBookAnswer(matched.get(0), userMessage, null, false);
             return formatBookListAnswer(userMessage, matched);
 
         } catch (Exception e) {
-            System.err.println("[ChatService] buildSmartLocalAnswer lỗi: " + e.getMessage());
+            System.err.println("[ChatService] Lỗi xử lý buildSmartLocalAnswer fallback: " + e.getMessage());
             return null;
         }
     }
 
-    // FORMAT OUTPUT
-
-    /** Một dòng sách ngắn gọn dùng trong danh sách */
     private void appendBookLine(StringBuilder sb, Book b) {
-        sb.append("- \"").append(b.getTitle()).append("\"")
+        sb.append("* \"").append(b.getTitle()).append("\"")
                 .append(" | ID: ").append(b.getId())
                 .append(" | Tác giả: ").append(b.getAuthor() != null ? b.getAuthor() : "Chưa rõ")
-                .append(" | Thể loại: ").append(b.getCategory() != null ? b.getCategory() : "—")
-                .append(" | Giá: ").append(formatPrice(b.getPrice()))
-                .append(" | Còn: ").append(b.getQuantity()).append(" cuốn")
-                .append(b.getPdfPath() != null && !b.getPdfPath().isBlank() ? " | 📄 PDF" : "")
+                .append(" | Phân loại: ").append(b.getCategory() != null ? b.getCategory() : "—")
+                .append(" | Giá niêm yết: ").append(formatPrice(b.getPrice()))
+                .append(" | Kho: ").append(b.getQuantity()).append(" cuốn")
+                .append(b.getPdfPath() != null && !b.getPdfPath().isBlank() ? " | 📄 Có bản đọc thử PDF" : "")
                 .append("\n");
     }
 
-    /** Metadata đầy đủ một cuốn sách */
     private void appendBookDetail(StringBuilder sb, Book b) {
-        sb.append("ID: ").append(b.getId()).append("\n")
-                .append("Tên: \"").append(b.getTitle()).append("\"\n")
-                .append("Tác giả: ").append(b.getAuthor() != null ? b.getAuthor() : "Chưa rõ").append("\n")
+        sb.append("Mã định danh (ID): ").append(b.getId()).append("\n")
+                .append("Tên tác phẩm: \"").append(b.getTitle()).append("\"\n")
+                .append("Tác giả chính: ").append(b.getAuthor() != null ? b.getAuthor() : "Chưa rõ").append("\n")
                 .append("Thể loại: ").append(b.getCategory() != null ? b.getCategory() : "—").append("\n")
-                .append("Giá: ").append(formatPrice(b.getPrice())).append("\n")
-                .append("Tồn kho: ").append(b.getQuantity()).append(" cuốn\n");
+                .append("Giá niêm yết: ").append(formatPrice(b.getPrice())).append("\n")
+                .append("Số lượng khả dụng: ").append(b.getQuantity()).append(" cuốn\n");
         if (b.getDescription() != null && !b.getDescription().isBlank())
-            sb.append("Mô tả: ").append(b.getDescription().trim()).append("\n");
+            sb.append("Tóm tắt nội dung: ").append(b.getDescription().trim()).append("\n");
         if (b.getPdfPath() != null && !b.getPdfPath().isBlank())
-            sb.append("📄 Có file PDF (hỏi mình về nội dung nhé!)\n");
+            sb.append("📄 Hệ thống đã đồng bộ file đọc thử PDF.\n");
     }
 
-    /** Format câu trả lời chi tiết cho một cuốn sách (dùng trong fallback) */
     private String formatDetailedBookAnswer(Book b, String userMessage, String pdfText, boolean hasMore) {
         StringBuilder sb = new StringBuilder();
-        sb.append("📖 **").append(b.getTitle().toUpperCase(Locale.ROOT)).append("**\n");
-
-        sb.append(" ✍️ **Tác giả:** ").append(b.getAuthor() != null ? b.getAuthor() : "Đang cập nhật").append("\n");
-        sb.append(" 📁 **Thể loại:** ").append(b.getCategory() != null ? b.getCategory() : "—").append("\n");
-        sb.append(" 💵 **Giá bán:** `").append(formatPrice(b.getPrice())).append("`\n");
-        sb.append(" 📦 **Tình trạng:** ")
-                .append(b.getQuantity() > 0 ? "Còn " + b.getQuantity() + " cuốn" : "Tạm hết hàng").append("\n");
+        sb.append("Dưới đây là thông tin chi tiết về cuốn sách **").append(b.getTitle())
+                .append("** dựa trên hệ thống dữ liệu cửa hàng:\n\n");
+        sb.append("---\n\n");
+        sb.append("## Thông tin chung\n\n");
+        sb.append("* **Tên tác phẩm:** ").append(b.getTitle()).append("\n");
+        sb.append("* **Tác giả:** ").append(b.getAuthor() != null ? b.getAuthor() : "Đang cập nhật thêm").append("\n");
+        sb.append("* **Danh mục:** ").append(b.getCategory() != null ? b.getCategory() : "—").append("\n\n");
+        sb.append("---\n\n");
+        sb.append("## Giá bán & Tình trạng kho\n\n");
+        sb.append("* **Giá ưu đãi hiện tại:** **").append(formatPrice(b.getPrice())).append("**\n");
+        sb.append("* **Tình trạng khả dụng:** ").append(
+                b.getQuantity() > 0 ? "Còn khả dụng **" + b.getQuantity() + "** cuốn trong kho" : "**Tạm cháy hàng**")
+                .append("\n");
 
         if (b.getDescription() != null && !b.getDescription().isBlank()) {
-            sb.append("\n💡 **Giới thiệu sách:**\n");
-            sb.append("> ").append(b.getDescription().trim().replace("\n", "\n> ")).append("\n");
+            sb.append("\n---\n\n## Giới thiệu tổng quan\n\n").append(b.getDescription().trim()).append("\n");
         }
 
         if (pdfText != null && !pdfText.isBlank()) {
             String snippet = extractRelevantSnippet(pdfText, userMessage, 1500);
             if (!snippet.isBlank()) {
-                sb.append("\n📄 **Nội dung liên quan trích từ sách:**\n");
-                sb.append("```text\n").append(snippet).append("\n```\n");
+                sb.append("\n---\n\n## Dữ liệu trích yếu (Từ nội dung PDF)\n\n").append(snippet).append("\n");
             }
         }
 
-        if (hasMore)
-            sb.append("\n💡 *Còn sách liên quan khác — hãy gõ tên cuốn sách cụ thể để mình tra cứu tiếp nhé!*");
+        if (hasMore) {
+            sb.append(
+                    "\n---\n\n## Gợi ý thêm\n\nKho hàng còn ghi nhận một số đầu sách tương tự thuộc nhóm ngành này, bạn có muốn thu hẹp phạm vi tìm kiếm không?\n");
+        }
 
+        appendActionTriggersForBook(sb, b);
         return sb.toString().trim();
     }
 
-    /** Format danh sách nhiều sách (dùng trong fallback catalog) */
     private String formatBookListAnswer(String userMessage, List<Book> matched) {
         StringBuilder sb = new StringBuilder();
-        String topic = extractTopicFromQuestion(userMessage);
+        String topic = String.join(" ", extractSearchKeywords(userMessage));
+        if (topic.isBlank())
+            topic = extractTopicFromQuestion(userMessage);
 
-        sb.append("🔍 Mình tìm thấy **").append(matched.size()).append("** cuốn sách");
+        sb.append("Mình đã rà soát và tìm thấy **").append(matched.size()).append("** cuốn sách");
         if (!topic.isBlank()) {
-            sb.append(" phù hợp với từ khóa **\"").append(topic).append("\"**");
+            sb.append(" thuộc nhóm chủ đề **\"").append(topic).append("\"**");
         }
-        sb.append(":\n\n");
+        sb.append(" cực kỳ phù hợp với nhu cầu của bạn:\n\n");
+        sb.append("---\n\n");
+        sb.append("## Danh mục đề xuất hàng đầu\n\n");
 
         int i = 1;
         for (Book b : matched.stream().limit(5).collect(Collectors.toList())) {
-            sb.append(i++).append(". 📖 **").append(b.getTitle()).append("**\n");
-            sb.append("   • **Tác giả:** ").append(b.getAuthor() != null ? b.getAuthor() : "Chưa rõ").append("\n");
-            sb.append("   • **Thể loại:** ").append(b.getCategory() != null ? b.getCategory() : "—");
-            sb.append("  **Giá:** `").append(formatPrice(b.getPrice())).append("`\n");
+            sb.append(i++).append(". **").append(b.getTitle()).append("**\n");
+            sb.append("   - **Tác giả:** ").append(b.getAuthor() != null ? b.getAuthor() : "Chưa cập nhật")
+                    .append("\n");
+            sb.append("   - **Chuyên mục:** ").append(b.getCategory() != null ? b.getCategory() : "—").append("\n");
+            sb.append("   - **Giá bán giá:** **").append(formatPrice(b.getPrice())).append("**\n");
             if (b.getDescription() != null && !b.getDescription().isBlank()) {
                 String desc = b.getDescription().trim();
-                if (desc.length() > 120) {
+                if (desc.length() > 120)
                     desc = desc.substring(0, 120) + "...";
-                }
-                sb.append("   • *Mô tả:* ").append(desc).append("\n");
+                sb.append("   - **Đặc điểm:** ").append(desc).append("\n");
             }
             sb.append("\n");
         }
 
-        if (!matched.isEmpty()) {
-            sb.append("💡 **Gợi ý:** Bạn có thể gõ tên một cuốn cụ thể (ví dụ: *")
-                    .append(matched.get(0).getTitle())
-                    .append("*) để mình tra cứu nội dung chi tiết hoặc đọc thử nhé! ✨");
-        }
+        appendActionTriggersForList(sb, userMessage, matched);
         return sb.toString().trim();
+    }
+
+    private boolean hasActionTriggers(String text) {
+        return text != null && text.toLowerCase(Locale.ROOT).contains("<actiontrigger");
+    }
+
+    private String enrichWithActionTriggers(String aiText, String userMessage, List<Book> books) {
+        if (aiText == null || aiText.isBlank() || hasActionTriggers(aiText))
+            return aiText;
+
+        Book specific = findBestBookFromQuery(books, userMessage);
+        if (specific == null)
+            specific = findSpecificBookInfoMatch(books, userMessage);
+        if (specific != null) {
+            StringBuilder sb = new StringBuilder(aiText);
+            appendActionTriggersForBook(sb, specific);
+            return sb.toString().trim();
+        }
+
+        List<Book> matched = findRelevantBooks(books, userMessage, true);
+        if (!matched.isEmpty()) {
+            StringBuilder sb = new StringBuilder(aiText);
+            appendActionTriggersForList(sb, userMessage, matched);
+            return sb.toString().trim();
+        }
+        return aiText;
+    }
+
+    private void appendActionTriggersForBook(StringBuilder sb, Book b) {
+        if (b == null || b.getId() == null)
+            return;
+        sb.append("\n\n---\n");
+        sb.append("**Bạn muốn làm gì tiếp theo?** Nhấn nút chọn bên dưới nhé 👇\n");
+        sb.append("<ActionTrigger type=\"view-detail\" target=\"book-detail\" id=\"").append(b.getId())
+                .append("\">✅ Có, xem trang chi tiết</ActionTrigger>\n");
+        if (b.getQuantity() > 0) {
+            sb.append("<ActionTrigger type=\"order\" target=\"cart\" id=\"").append(b.getId())
+                    .append("\">🛒 Đặt mua ngay</ActionTrigger>\n");
+        }
+    }
+
+    private void appendActionTriggersForList(StringBuilder sb, String userMessage, List<Book> matched) {
+        if (matched == null || matched.isEmpty())
+            return;
+        if (matched.size() == 1) {
+            appendActionTriggersForBook(sb, matched.get(0));
+            return;
+        }
+        sb.append("\n\n---\n");
+        sb.append("**Bạn muốn làm gì tiếp theo?** 👇\n");
+        sb.append("<ActionTrigger type=\"navigate\" target=\"books\">📚 Xem toàn bộ sách</ActionTrigger>\n");
+        String topic = String.join(" ", extractSearchKeywords(userMessage));
+        if (!topic.isBlank()) {
+            String safe = topic.replace("\"", "'");
+            sb.append("<ActionTrigger type=\"search\" target=\"books\" query=\"").append(safe)
+                    .append("\">🔍 Tìm tiếp \"").append(safe).append("\"</ActionTrigger>\n");
+        }
+        Book first = matched.get(0);
+        if (first != null && first.getId() != null) {
+            sb.append("<ActionTrigger type=\"view-detail\" target=\"book-detail\" id=\"").append(first.getId())
+                    .append("\">✅ Xem chi tiết cuốn \"").append(first.getTitle()).append("\"</ActionTrigger>\n");
+        }
     }
 
     private String extractTopicFromQuestion(String userMessage) {
         String n = normalizeSearch(userMessage);
-        return Arrays.stream(n.split("\\s+"))
-                .filter(token -> token.length() >= 2 && !STOP_WORDS.contains(token))
-                .collect(Collectors.joining(" "))
-                .trim();
+        return Arrays.stream(n.split("\\s+")).filter(token -> token.length() >= 2 && !STOP_WORDS.contains(token))
+                .collect(Collectors.joining(" ")).trim();
     }
 
-    // GEMINI API
-    /**
-     * Gọi Gemini API với fallback: thử lần lượt primary model → fallback models.
-     */
+    private String buildPdfLocalAnswer(String question, String pdfText, String pdfPath) {
+        String nq = normalizeSearch(question != null ? question : "");
+        boolean wantSummary = nq.matches(".*(tom tat|tong hop|summary|noi dung chinh|outline|muc luc).*");
+
+        StringBuilder sb = new StringBuilder();
+        sb.append("Dưới đây là ");
+        sb.append(wantSummary ? "**bản tóm lược cốt lõi**" : "**phần phân hệ kiến thức liên quan**");
+        sb.append(" bóc tách từ file tài liệu hệ thống");
+        Book linked = findBookByPdfPath(pdfPath);
+        if (linked != null)
+            sb.append(" (*Cuốn: ").append(linked.getTitle()).append("*)");
+        sb.append(":\n\n---\n\n");
+
+        String snippet = extractRelevantSnippet(pdfText, question, wantSummary ? 6000 : 4000);
+        if (snippet.isBlank())
+            snippet = safeSubstring(pdfText, 3500);
+
+        if (wantSummary) {
+            sb.append("## Tóm tắt nội dung chính\n\n");
+            sb.append(formatPdfSnippetAsBullets(snippet, 14));
+        } else {
+            sb.append("## Phân tích điểm liên quan\n\n");
+            sb.append(formatPdfSnippetAsBullets(snippet, 10));
+        }
+
+        sb.append("\n---\n\n## Thông tin vận hành hệ thống\n\n");
+        sb.append(
+                "> ⚙️ **Thông báo:** Kênh truyền API Gemini hiện tại đang tạm gián đoạn do vượt quá hạn ngạch (Quota limit). Bản hiển thị trên được trích lọc tự động thông qua lõi phân tích cục bộ (Local Filter) của server.\n");
+
+        if (linked != null)
+            appendActionTriggersForBook(sb, linked);
+        return sb.toString().trim();
+    }
+
+    private String formatPdfSnippetAsBullets(String snippet, int maxItems) {
+        if (snippet == null || snippet.isBlank())
+            return "* _(Hệ thống cục bộ không thể bóc tách phân đoạn phù hợp trong tệp PDF này.)_\n";
+
+        String[] chunks = snippet.split("(?<=[.!?\\n])\\s+");
+        StringBuilder out = new StringBuilder();
+        int n = 0;
+        for (String chunk : chunks) {
+            String t = chunk.trim();
+            if (t.length() < 25)
+                continue;
+            if (t.length() > 320)
+                t = t.substring(0, 317) + "...";
+            boolean looksLikeHeading = t.length() < 80 && !t.contains(".");
+            if (looksLikeHeading)
+                out.append("* **").append(t).append("**\n");
+            else
+                out.append("* ").append(t).append("\n");
+            if (++n >= maxItems)
+                break;
+        }
+        if (n == 0)
+            out.append("* ").append(safeSubstring(snippet.replace("\n", " "), 500)).append("\n");
+        return out.toString();
+    }
+
     private String callGeminiWithFallback(String payload) {
         List<String> models = new ArrayList<>();
         models.add(geminiModel);
@@ -1605,10 +1369,10 @@ public class ChatService {
                 lastError = ex;
                 if (!isRetryableGeminiError(ex))
                     throw ex;
-                System.err.println("[ChatService] Model " + model + " thất bại: " + ex.getMessage());
+                System.err.println("[ChatService] Phân hệ Model " + model + " quá tải: " + ex.getMessage());
             }
         }
-        throw lastError != null ? lastError : new RuntimeException("Không gọi được Gemini API");
+        throw lastError != null ? lastError : new RuntimeException("Tất cả cổng kết nối Gemini API tạm thời đóng.");
     }
 
     private String callGemini(String model, String payload) {
@@ -1620,28 +1384,21 @@ public class ChatService {
                 .retrieve()
                 .onStatus(status -> status.isError(),
                         resp -> resp.bodyToMono(String.class)
-                                .map(body -> new RuntimeException("Gemini API " + resp.statusCode() + ": " + body)))
+                                .map(body -> new RuntimeException("Gemini API Lỗi " + resp.statusCode() + ": " + body)))
                 .bodyToMono(String.class)
                 .block();
     }
 
     private boolean isRetryableGeminiError(RuntimeException ex) {
         String msg = ex.getMessage() != null ? ex.getMessage() : "";
-        return msg.contains("429") || msg.contains("RESOURCE_EXHAUSTED")
-                || msg.contains("503") || msg.contains("404");
+        return msg.contains("429") || msg.contains("RESOURCE_EXHAUSTED") || msg.contains("503") || msg.contains("404");
     }
 
-    /**
-     * Xây dựng payload JSON cho Gemini (có lịch sử chat).
-     * Xử lý trường hợp trùng role bằng cách gộp nội dung.
-     */
-    private String buildGeminiPayload(List<ChatMessage> history, String newMessage,
-            String systemInstruction) throws Exception {
+    private String buildGeminiPayload(List<ChatMessage> history, String newMessage, String systemInstruction)
+            throws Exception {
         List<Map<String, Object>> contents = new ArrayList<>();
-
         int historyStart = Math.max(0, history.size() - maxHistoryMessages);
-        while (historyStart < history.size()
-                && !"user".equals(history.get(historyStart).getRole())) {
+        while (historyStart < history.size() && !"user".equals(history.get(historyStart).getRole())) {
             historyStart++;
         }
 
@@ -1668,13 +1425,19 @@ public class ChatService {
             }
         }
 
+        if (contents.isEmpty() && newMessage != null && !newMessage.isBlank()) {
+            Map<String, Object> userTurn = new LinkedHashMap<>();
+            userTurn.put("role", "user");
+            userTurn.put("parts", List.of(Map.of("text", newMessage)));
+            contents.add(userTurn);
+        }
+
         Map<String, Object> payload = new LinkedHashMap<>();
         payload.put("system_instruction", Map.of("parts", List.of(Map.of("text", systemInstruction))));
         payload.put("contents", contents);
         return mapper.writeValueAsString(payload);
     }
 
-    /** Payload đơn giản (không lịch sử) — dùng cho PDF analysis */
     private String buildSimplePayload(String system, String question) throws Exception {
         Map<String, Object> payload = new LinkedHashMap<>();
         payload.put("system_instruction", Map.of("parts", List.of(Map.of("text", system))));
@@ -1682,29 +1445,27 @@ public class ChatService {
         return mapper.writeValueAsString(payload);
     }
 
-    /** Parse JSON response Gemini để lấy text */
     @SuppressWarnings("unchecked")
     private String parseGeminiResponse(String responseBody) throws Exception {
         Map<String, Object> response = mapper.readValue(responseBody, Map.class);
         if (response.containsKey("error"))
-            throw new RuntimeException("Gemini error: " + response.get("error"));
+            throw new RuntimeException("Lỗi máy chủ Gemini: " + response.get("error"));
 
         List<Map<String, Object>> candidates = (List<Map<String, Object>>) response.get("candidates");
         if (candidates == null || candidates.isEmpty())
-            throw new RuntimeException("Gemini không trả về nội dung");
+            throw new RuntimeException("Mô hình không thể phản hồi câu hỏi này.");
 
         Map<String, Object> content = (Map<String, Object>) candidates.get(0).get("content");
         if (content == null)
-            throw new RuntimeException("Gemini không trả về content");
+            throw new RuntimeException("Cấu trúc JSON phản hồi trống.");
 
         List<Map<String, Object>> parts = (List<Map<String, Object>>) content.get("parts");
         if (parts == null || parts.isEmpty() || parts.get(0).get("text") == null)
-            throw new RuntimeException("Gemini không trả về text");
+            throw new RuntimeException("Không tìm thấy phân mảnh Text.");
 
         return (String) parts.get(0).get("text");
     }
 
-    // UTILITY
     private void saveMessage(String username, String role, String message, String sessionId) {
         ChatMessage msg = new ChatMessage();
         msg.setUsername(username);
@@ -1715,10 +1476,6 @@ public class ChatService {
         chatRepo.save(msg);
     }
 
-    /**
-     * Chuẩn hóa text: bỏ dấu tiếng Việt, lowercase.
-     * Không replace 'y' → 'i' (gây sai khi tìm "Python", "Ruby", v.v.)
-     */
     private String normalizeSearch(String text) {
         if (text == null)
             return "";
@@ -1726,31 +1483,24 @@ public class ChatService {
         return n.replaceAll("\\p{M}", "").toLowerCase(Locale.ROOT).replaceAll("\\s+", " ").trim();
     }
 
-    /** Format giá tiền Việt Nam */
     private String formatPrice(java.math.BigDecimal price) {
         if (price == null)
             return "Chưa có giá";
         return NumberFormat.getNumberInstance(new Locale("vi", "VN")).format(price) + "đ";
     }
 
-    /** Cắt chuỗi an toàn */
     private String safeSubstring(String text, int maxLen) {
         if (text == null)
             return "";
         return text.length() <= maxLen ? text : text.substring(0, maxLen) + "...";
     }
 
-    /** Chuyển lỗi kỹ thuật thành thông báo thân thiện */
     private String toUserFriendlyError(Exception e) {
         String msg = e.getMessage() != null ? e.getMessage() : "";
         if (msg.contains("429") || msg.contains("RESOURCE_EXHAUSTED") || msg.contains("quota"))
-            return " Hệ thống AI đã hết lượt hôm nay (Gemini free tier).\n\n"
-                    + "Bạn có thể:\n"
-                    + "• Thử lại sau 1–24 giờ\n"
-                    + "• Tạo API key mới tại https://aistudio.google.com/apikey\n\n"
-                    + "Trong lúc chờ, xem danh sách sách trực tiếp trên trang Sách nhé!";
+            return " Hệ thống trí tuệ nhân tạo tạm thời đạt ngưỡng giới hạn truy cập trong ngày (Hạn ngạch của gói kết nối miễn phí).\n\nBạn có thể thử lại sau ít phút hoặc tra cứu thủ công trực tiếp trên thanh công cụ của hệ thống nhé!";
         if (msg.contains("API key") || msg.contains("401") || msg.contains("403"))
-            return "🔑 API key Gemini không hợp lệ. Admin cần cập nhật gemini.api.key.";
-        return "⚠️ Xin lỗi! Mình gặp sự cố kỹ thuật nhỏ. Bạn thử lại sau ít phút nhé!";
+            return "🔑 Sự cố xác thực hệ thống: Khóa kết nối API (Gemini Key) không chính xác hoặc hết hạn.";
+        return "⚠️ Thật xin lỗi bạn, bộ máy xử lý của mình gặp một xung đột kỹ thuật nhỏ ngoài ý muốn. Vui lòng thử lại sau giây lát!";
     }
 }
