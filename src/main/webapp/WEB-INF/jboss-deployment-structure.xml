@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<jboss-deployment-structure>
+    <deployment>
+        <!-- Exclude subsystems to avoid conflicts with Spring Boot -->
+        <exclude-subsystems>
+            <subsystem name="weld" />
+            <subsystem name="jsf" />
+        </exclude-subsystems>
+        <exclusions>
+            <module name="org.jboss.weld.core" />
+            <module name="org.jboss.weld.spi" />
+            <module name="org.jboss.weld.api" />
+            <module name="com.sun.jsf-impl" />
+            <module name="org.jboss.as.jsf-injection" />
+        </exclusions>
+    </deployment>
+</jboss-deployment-structure>

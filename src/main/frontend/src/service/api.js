@@ -198,13 +198,18 @@ const api = {
             body: JSON.stringify(payload)
         });
         let data = {};
-        try {
-            data = await res.json();
-        } catch {
-            data = { success: false, message: 'Phản hồi server không hợp lệ (HTTP ' + res.status + ')' };
-        }
+        try { data = await res.json(); } catch { }
         return { ok: res.ok, data };
     },
+
+    streamChat: async (payload) => {
+        return fetch(`${BASE}/chat/stream`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+        });
+    },
+
     getChatHistory: async (sessionId) => {
         const res = await fetch(`${BASE}/chat/history/${sessionId}`);
         return res.json();

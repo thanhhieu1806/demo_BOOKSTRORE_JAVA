@@ -21,17 +21,26 @@ export function parseAIMessage(rawText) {
     if (!rawText) return { text: '', actions: [] };
 
     const actions = [];
-    const triggerRegex = /<ActionTrigger\s+([^>]+)>([\s\S]*?)<\/ActionTrigger>/gi;
+    // Hỗ trợ cả tag <ActionTrigger> và <button class="action-trigger">
+    const triggerRegex = /<(ActionTrigger|button)\s+([^>]+)>([\s\S]*?)<\/(ActionTrigger|button)>/gi;
 
     let match;
     while ((match = triggerRegex.exec(rawText)) !== null) {
-        const attrString = match[1];
-        const label = match[2].trim();
+        const tag = match[1].toLowerCase();
+        const attrString = match[2];
+        const label = match[3].trim();
+
+        // Nếu là tag button mà không có class action-trigger thì bỏ qua
+        if (tag === 'button' && !attrString.includes('action-trigger')) continue;
+
         const attrs = {};
-        const attrRegex = /(\w+)="([^"]*)"/g;
+        const attrRegex = /([\w-]+)="([^"]*)"/g;
         let a;
         while ((a = attrRegex.exec(attrString)) !== null) {
-            attrs[a[1]] = a[2];
+            let key = a[1];
+            // Chuyển đổi data-type thành type, data-id thành id...
+            if (key.startsWith('data-')) key = key.substring(5);
+            attrs[key] = a[2];
         }
 
         actions.push({
@@ -44,7 +53,12 @@ export function parseAIMessage(rawText) {
     }
 
     const cleanText = rawText
-        .replace(/<ActionTrigger[\s\S]*?<\/ActionTrigger>/gi, '')
+        .replace(/<(ActionTrigger|button)[\s\S]*?<\/(ActionTrigger|button)>/gi, (match) => {
+            if (match.toLowerCase().startsWith('<button') && !match.includes('action-trigger')) {
+                return match; // Giữ lại button thường nếu có
+            }
+            return '';
+        })
         .replace(/\n{3,}/g, '\n\n')
         .trim();
 

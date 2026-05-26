@@ -17,7 +17,7 @@ public class WebConfig implements WebMvcConfigurer {
     @Override
     public void addResourceHandlers(ResourceHandlerRegistry registry) {
         registry.addResourceHandler("/assets/**")
-                .addResourceLocations("classpath:/static/assets/", "/assets/");
+                .addResourceLocations("/assets/", "classpath:/static/assets/");
         // Serve uploaded files (images, PDFs)
         registry.addResourceHandler("/uploads/**")
                 .addResourceLocations("file:D:/demologin/uploads/");

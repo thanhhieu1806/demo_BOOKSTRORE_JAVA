@@ -16,7 +16,6 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.example.dem_login.dto.Dto;
 import com.example.dem_login.model.CustomerAccount;
 import com.example.dem_login.model.CustomerProfile;
-import com.example.dem_login.model.User;
 import com.example.dem_login.repository.CustomerAccountRepository;
 import com.example.dem_login.repository.CustomerProfileRepository;
 import com.example.dem_login.repository.UserJpaRepository;

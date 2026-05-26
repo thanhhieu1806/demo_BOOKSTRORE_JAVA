@@ -6,9 +6,8 @@ import org.springframework.web.bind.annotation.GetMapping;
 @Controller
 public class SpaController {
 
-    // Tất cả request không phải /api sẽ trả về index.html
+    // Tất cả request không phải /api và không phải trang chủ sẽ trả về index.html
     @GetMapping({
-            "/",
             "/login",
             "/dashboard",
             "/users",

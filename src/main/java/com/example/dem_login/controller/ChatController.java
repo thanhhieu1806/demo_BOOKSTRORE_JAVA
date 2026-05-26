@@ -15,6 +15,9 @@ import org.springframework.web.bind.annotation.CrossOrigin;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 
+import org.springframework.http.MediaType;
+import reactor.core.publisher.Flux;
+
 @RestController
 @RequestMapping("/api/chat")
 @CrossOrigin(origins = "*")
@@ -28,7 +31,13 @@ public class ChatController {
         this.chatService = chatService;
     }
 
-    // Gửi tin nhắn
+    // Gửi tin nhắn (Streaming SSE)
+    @PostMapping(value = "/stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
+    public Flux<String> stream(@RequestBody Dto.ChatRequest req) {
+        return chatService.streamSendMessage(req);
+    }
+
+    // Gửi tin nhắn (Non-streaming)
     @PostMapping("/send")
     // @RequestBody Dto.ChatRequest req: nhan du lieu tu body cua request
     // @RequestBody: ep du lieu tu body cua request vao bien req

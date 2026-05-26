@@ -5,41 +5,50 @@ import ChatPanel from './ChatPanel';
 export default function ChatWidget() {
     const { user } = useAuth();
     const [isOpen, setIsOpen] = useState(false);
+    // Sau lần đầu mở, giữ ChatPanel mounted mãi — chỉ ẩn/hiện bằng CSS
+    const [hasMounted, setHasMounted] = useState(false);
 
     // Nếu là ADMIN thì không hiện ChatWidget
     if (user?.role === 'ADMIN') return null;
+
+    const handleToggle = () => {
+        if (!hasMounted) setHasMounted(true);
+        setIsOpen(prev => !prev);
+    };
 
     return (
         <>
             {/* Nút bong bóng chat */}
             <button
-                onClick={() => setIsOpen(!isOpen)}
+                onClick={handleToggle}
                 style={{
                     position: 'fixed',
-                    bottom: '30px',
-                    right: '30px',
-                    width: '60px',
-                    height: '60px',
+                    bottom: '28px',
+                    right: '28px',
+                    width: '54px',
+                    height: '54px',
                     borderRadius: '50%',
-                    background: 'linear-gradient(135deg, #7c3aed, #2dd4bf)',
+                    background: '#5b21b6',
                     color: 'white',
                     border: 'none',
                     cursor: 'pointer',
-                    boxShadow: '0 8px 24px rgba(124, 58, 237, 0.4)',
+                    boxShadow: '0 6px 20px rgba(91, 33, 182, 0.45)',
                     display: 'flex',
                     alignItems: 'center',
                     justifyContent: 'center',
                     zIndex: 999,
-                    transition: 'all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275)',
+                    transition: 'all 0.25s cubic-bezier(0.175, 0.885, 0.32, 1.275)',
                     transform: isOpen ? 'rotate(90deg)' : 'none'
                 }}
                 onMouseEnter={e => {
-                    e.currentTarget.style.transform = isOpen ? 'rotate(90deg) scale(1.1)' : 'scale(1.1)';
-                    e.currentTarget.style.boxShadow = '0 12px 32px rgba(124, 58, 237, 0.5)';
+                    e.currentTarget.style.transform = isOpen ? 'rotate(90deg) scale(1.08)' : 'scale(1.08)';
+                    e.currentTarget.style.boxShadow = '0 8px 28px rgba(91, 33, 182, 0.55)';
+                    e.currentTarget.style.background = '#4c1d95';
                 }}
                 onMouseLeave={e => {
                     e.currentTarget.style.transform = isOpen ? 'rotate(90deg)' : 'scale(1)';
-                    e.currentTarget.style.boxShadow = '0 8px 24px rgba(124, 58, 237, 0.4)';
+                    e.currentTarget.style.boxShadow = '0 6px 20px rgba(91, 33, 182, 0.45)';
+                    e.currentTarget.style.background = '#5b21b6';
                 }}
             >
                 {isOpen ? (
@@ -53,12 +62,14 @@ export default function ChatWidget() {
                 )}
             </button>
 
-            {/* Panel Chat */}
-            {isOpen && (
-                <ChatPanel 
-                    onClose={() => setIsOpen(false)} 
-                    username={user?.username || 'Khách'} 
-                />
+            {/* Panel Chat — mount 1 lần, ẩn/hiện bằng CSS, KHÔNG unmount */}
+            {hasMounted && (
+                <div style={{ display: isOpen ? 'contents' : 'none' }}>
+                    <ChatPanel
+                        onClose={() => setIsOpen(false)}
+                        username={user?.username || 'Khách'}
+                    />
+                </div>
             )}
         </>
     );
