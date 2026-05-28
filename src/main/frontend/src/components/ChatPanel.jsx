@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
@@ -114,7 +114,8 @@ function Typewriter({ text, speed = 6, onComplete }) {
 ───────────────────────────────────────── */
 function Bubble({ msg, onNavigate, isLast }) {
     const isUser = msg.role === 'user';
-    const [done, setDone] = useState(!isLast || isUser);
+    // msg.done = true nếu là tin nhắn lịch sử → không chạy Typewriter lại
+    const [done, setDone] = useState(!!msg.done || isUser);
     const { text, actions } = isUser ? { text: msg.message, actions: [] } : parseAIMessage(msg.message || '');
 
     if (isUser) return (
@@ -231,7 +232,11 @@ export default function ChatPanel({ onClose, username }) {
     const loadHistory = async (sid) => {
         try {
             const data = await api.getChatHistory(sid);
-            if (data?.length > 0) { setMessages(data); setPhase('chat'); }
+            if (data?.length > 0) {
+                // Đánh dấu done:true để Bubble không chạy Typewriter cho tin nhắn cũ
+                setMessages(data.map(m => ({ ...m, done: true })));
+                setPhase('chat');
+            }
         } catch (err) {
             if (err.message === '401' || err.message === '403') {
                 localStorage.removeItem(`cs_${username}`);

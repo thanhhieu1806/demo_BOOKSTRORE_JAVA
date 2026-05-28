@@ -37,7 +37,8 @@ public class Order {
     public enum OrderStatus {
         PENDING,
         CONFIRMED,
-        CANCELLED
+        CANCELLED,
+        DELIVERED
     }
 
     // Getters & Setters

@@ -2,7 +2,7 @@ package com.example.dem_login.dto;
 
 //file nay dung de gui du lieu fe <-> be
 
-// ===== LOGIN =====
+//  LOGIN 
 //class : dinh nghia du lieu
 //request yeu cau client
 //response server tra ve 
@@ -98,7 +98,7 @@ public class Dto {
         }
     }
 
-    // ===== CREATE USER =====
+    // CREATE USER
     public static class CreateUserRequest {
         private String email;
         private String username;
@@ -176,7 +176,7 @@ public class Dto {
         }
     }
 
-    // ===== UPDATE PROFILE (USER/REPORT tự đổi email, mật khẩu) =====
+    // UPDATE PROFILE (USER/REPORT tự đổi email, mật khẩu)
     public static class UpdateProfileRequest {
         private String username; // username hiện tại (để xác định user)
         private String email; // email mới (có thể null nếu không đổi)
@@ -216,7 +216,7 @@ public class Dto {
         }
     }
 
-    // ===== FORCE CHANGE PASSWORD (đổi mật khẩu bắt buộc lần đầu) =====
+    // FORCE CHANGE PASSWORD (đổi mật khẩu bắt buộc lần đầu)
     public static class ForceChangePasswordRequest {
         private String username;
         private String currentPassword;
@@ -247,7 +247,7 @@ public class Dto {
         }
     }
 
-    // ===== EDIT USER =====
+    // EDIT USER
     public static class EditUserRequest {
         private String email;
         private String role;
@@ -287,7 +287,7 @@ public class Dto {
         }
     }
 
-    // ===== USER RESPONSE =====
+    // USER RESPONSE
     public static class UserResponse {
         private Long id;
         private String email;
@@ -690,7 +690,6 @@ public class Dto {
             this.role = role;
             this.message = message;
             this.createDate = createDate;
-
         }
 
         public String getRole() {
@@ -763,7 +762,7 @@ public class Dto {
         }
     }
 
-    // ===== SYNC CART =====
+    // SYNC CART
     public static class SyncCartRequest {
         private String username;
         private String cartData;

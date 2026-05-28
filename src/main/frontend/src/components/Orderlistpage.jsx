@@ -12,6 +12,7 @@ function OrderDetailModal({ order, isAdmin, onClose, onStatusChange }) {
         PENDING: { label: 'Chờ xác nhận', color: 'var(--yellow)', bg: 'var(--yellow-dim)' },
         CONFIRMED: { label: 'Đã xác nhận', color: 'var(--green)', bg: 'var(--green-dim)' },
         CANCELLED: { label: 'Đã hủy', color: 'var(--red)', bg: 'var(--red-dim)' },
+        DELIVERED: { label: 'Đã nhận hàng', color: 'var(--green)', bg: 'var(--green-dim)' },
     };
     const s = statusConfig[order.status] || statusConfig.PENDING;
 
@@ -264,12 +265,27 @@ export default function OrderListPage() {
         load();
     };
 
+    const handleConfirmReceived = async (orderId) => {
+        if (!window.confirm("Xác nhận bạn đã nhận được hàng?")) return;
+        try {
+            const res = await fetch(`/dem_login-0.0.1-SNAPSHOT/api/orders/${orderId}/received?username=${me?.username}`, {
+                method: 'POST'
+            });
+            const data = await res.json();
+            showToastMsg(data.message);
+            if (data.success === 'true') load(); // reload danh sách
+        } catch (err) {
+            showToastMsg('Lỗi kết nối');
+        }
+    };
+
     const fmtPrice = (p) => new Intl.NumberFormat('vi-VN').format(p) + ' đ';
 
     const statusConfig = {
         PENDING: { label: 'Chờ xác nhận', badgeClass: 'badge-lock' },
         CONFIRMED: { label: 'Đã xác nhận', badgeClass: 'badge-act' },
         CANCELLED: { label: 'Đã hủy', badgeClass: 'badge-del' },
+        DELIVERED: { label: 'Đã nhận hàng', badgeClass: 'badge-act' },
     };
 
     const filtered = orders.filter(o => {
@@ -364,6 +380,7 @@ export default function OrderListPage() {
                         <option value="ALL">Tất cả trạng thái</option>
                         <option value="PENDING">Chờ xác nhận</option>
                         <option value="CONFIRMED">Đã xác nhận</option>
+                        <option value="DELIVERED">Đã nhận hàng</option>
                         <option value="CANCELLED">Đã hủy</option>
                     </select>
                 </div>
@@ -454,6 +471,14 @@ export default function OrderListPage() {
                                                                 </svg>
                                                             </button>
                                                         </>
+                                                    )}
+                                                    {isUser && o.status === 'CONFIRMED' && (
+                                                        <button className="btn-icon btn-icon-success" title="Đã nhận hàng"
+                                                            onClick={() => handleConfirmReceived(o.id)}>
+                                                            <svg viewBox="0 0 20 20" fill="currentColor" width="14" height="14">
+                                                                <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" />
+                                                            </svg>
+                                                        </button>
                                                     )}
                                                 </div>
                                             </td>

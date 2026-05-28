@@ -109,4 +109,13 @@ public class OrderController {
         return ResponseEntity.ok(Map.of("success", "true", "message", "Cập nhật thành công"));
     }
 
+    @PostMapping("/{id}/received")
+    public ResponseEntity<Map<String,String>>confirmReceived(
+        @PathVariable Long id,
+        @RequestParam String username){
+            Map<String,String>result=orderService.confirmReceived(id,username);
+            boolean ok="true".equals(result.get("success"));
+            return ResponseEntity.status(ok?HttpStatus.OK:HttpStatus.BAD_REQUEST).body(result);
+        }
+
 }

@@ -171,4 +171,20 @@ public class OrderService {
         }).orElse(Map.of("success", "false", "message", "Không tìm thấy đơn hàng"));
     }
 
+    @Transactional
+    public Map<String,String> confirmReceived(Long orderId, String username){
+        return orderRepository.findById(orderId).map(order->{
+            if(!order.getUsername().equals(username)){
+                return Map.of("Success","false","message","Ban khong co quyen xac nhan don hang nay");
+            }
+            if(order.getStatus()!=Order.OrderStatus.CONFIRMED){
+                return Map.of("Success","false","message","chi co the xac nhan don hang khi don hangf da duoc xac nhan");
+            }
+            order.setStatus(Order.OrderStatus.DELIVERED);
+            order.setUpdateDate(LocalDateTime.now());
+            orderRepository.save(order);
+            return Map.of("Success","true","message","Xác nhận đơn hàng thành công");   
+        }).orElse(Map.of("Success","false","message","Không tìm thấy đơn hàng"));
+    }
+
 }
